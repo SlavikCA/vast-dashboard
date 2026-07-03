@@ -1,7 +1,18 @@
 # vast.ai Node Status Page
 
-Minimal Python web server that displays host hardware status (via vast.ai API) and
-Docker container inventory. Zero dependencies — stdlib only.
+Single-file Python web server that displays host hardware status (via vast.ai API) and Docker container inventory. Zero dependencies — stdlib only.
+
+![Dashboard screenshot](dashboard.png "Dashboard screenshot")
+
+Goal: Use my rig whenever it's not occupied by Vast tasks.
+
+Feeatures:
+- display status of the rig (Busy / Available)
+- display specs of the righ
+- start / stop containers: only user's containers. Doesn't mess with Vast's containers.
+
+Roadmap:
+- start host's task via Vast API
 
 ## Prerequisites
 
