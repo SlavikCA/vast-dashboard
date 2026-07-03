@@ -55,7 +55,10 @@ def _mb_to_gb(mb: int | float) -> str:
 
 def _status(m: dict) -> str:
     if m.get("current_rentals_running", 0) > 0:
-        return "BUSY"
+        occ = m.get("gpu_occupancy", "")
+        if "D" in occ:
+            return "BUSY with ON-DEMAND"
+        return "BUSY with interruptible"
     if m.get("listed"):
         return "AVAILABLE"
     return "IDLE"
@@ -206,7 +209,7 @@ class Handler(BaseHTTPRequestHandler):
         hostname = m["hostname"]
         status = _status(m)
         _log(f"web {self.command} {self.path} from {self.client_address[0]}")
-        cls = "busy" if status == "BUSY" else ("available" if status == "AVAILABLE" else "idle")
+        cls = "busy" if status.startswith("BUSY") else ("available" if status == "AVAILABLE" else "idle")
 
 
         err, containers = _docker_ps()
