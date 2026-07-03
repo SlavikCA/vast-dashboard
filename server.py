@@ -5,6 +5,7 @@ import json
 import os
 import time
 import urllib.request
+from urllib.parse import parse_qs, urlparse
 import subprocess
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -101,12 +102,20 @@ h2 { font-size: 1.3em; color: #ccc; margin: 32px 0 12px; }
                  font-size: 0.92em; vertical-align: top; }
 .containers td.name { font-weight: 600; color: #ddd; }
 .containers td.image { color: #999; font-size: 0.85em; }
-.containers td.state { text-align: right; white-space: nowrap; }
-.containers td.state.running { color: #66bb6a; }
-.containers td.state.exited  { color: #888; }
+.containers tr.running-text td { color: #66bb6a; }
+.containers tr.stopped-text td { color: #ef5350; }
 .containers .section-label { font-size: 0.82em; color: #666; text-transform: uppercase;
                              letter-spacing: 0.5px; margin: 16px 0 6px; }
 .containers .empty { color: #555; font-style: italic; font-size: 0.9em; padding: 4px 8px; }
+.containers td.action { width: 70px; }
+.containers button { font-size: 0.78em; padding: 2px 10px; border: 1px solid #555;
+                    border-radius: 4px; cursor: pointer; background: #2a2a2a; color: #ccc; }
+.containers button:hover { background: #3a3a3a; }
+.containers button:disabled { opacity: 0.4; cursor: default; }
+.containers button.start-btn { border-color: #66bb6a; color: #66bb6a; }
+.containers button.start-btn:hover { background: #1a3a1a; }
+.containers button.stop-btn  { border-color: #ef5350; color: #ef5350; }
+.containers button.stop-btn:hover  { background: #3a1a1a; }
 """
 
 TEMPLATE = """\
@@ -132,6 +141,17 @@ TEMPLATE = """\
 <div class="containers">
 {containers}
 </div>
+<script>
+for (const btn of document.querySelectorAll(".start-btn, .stop-btn")) {{
+  btn.addEventListener("click", async () => {{
+    btn.disabled = true;
+    const action = btn.classList.contains("start-btn") ? "start" : "stop";
+    const name = encodeURIComponent(btn.dataset.name);
+    try {{ await fetch("/" + action + "?name=" + name, {{ method: "POST" }}); }} catch (_) {{}}
+    setTimeout(() => location.reload(), 5000);
+  }});
+}}
+</script>
 </body>
 </html>"""
 
@@ -177,20 +197,26 @@ class Handler(BaseHTTPRequestHandler):
                 rows.append(f'<div class="section-label">Running ({len(running)})</div>')
                 rows.append("<table>")
                 for c in running:
+                    btn = ""
+                    if not c["name"].startswith("C."):
+                        btn = f'<td class="action"><button class="stop-btn" data-name="{c["name"]}">STOP</button></td>'
                     rows.append(
-                        f'<tr><td class="name">{c["name"]}</td>'
-                        f'<td class="image">{c["image"]}</td>'
-                        f'<td class="state running">{c["state"]}</td></tr>'
+                        f'<tr class="running-text">{btn}'
+                        f'<td class="name">{c["name"]}</td>'
+                        f'<td class="image">{c["image"]}</td></tr>'
                     )
                 rows.append("</table>")
             if stopped:
                 rows.append(f'<div class="section-label">Stopped ({len(stopped)})</div>')
                 rows.append("<table>")
                 for c in stopped:
+                    btn = ""
+                    if not c["name"].startswith("C."):
+                        btn = f'<td class="action"><button class="start-btn" data-name="{c["name"]}">START</button></td>'
                     rows.append(
-                        f'<tr><td class="name">{c["name"]}</td>'
-                        f'<td class="image">{c["image"]}</td>'
-                        f'<td class="state exited">{c["state"]}</td></tr>'
+                        f'<tr class="stopped-text">{btn}'
+                        f'<td class="name">{c["name"]}</td>'
+                        f'<td class="image">{c["image"]}</td></tr>'
                     )
                 rows.append("</table>")
             container_html = "\n".join(rows)
@@ -215,6 +241,45 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
         self.wfile.write(html.encode())
+
+
+    def do_POST(self):
+        url = urlparse(self.path)
+        qs = parse_qs(url.query)
+        name = (qs.get("name", [""])[0]).strip()
+
+        # basic validation — only allow container-name-ish chars
+        if not name or not all(c.isalnum() or c in "_-." for c in name):
+            self.send_error(400, "bad container name")
+            return
+
+        if url.path == "/start":
+            cmd = ["docker", "start", name]
+        elif url.path == "/stop":
+            cmd = ["docker", "stop", name]
+        else:
+            self.send_error(404)
+            return
+
+        try:
+            subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=True)
+        except subprocess.CalledProcessError as exc:
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": exc.stderr.strip()}).encode())
+            return
+        except Exception as exc:
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(exc)}).encode())
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps({"ok": True}).encode())
 
     def log_message(self, fmt, *args):
         pass  # quiet
