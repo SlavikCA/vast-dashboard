@@ -10,9 +10,9 @@ import subprocess
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 PORT = int(os.environ.get("PORT", 8080))
-MACHINE_ID = "SET_MACHINE"
-API_KEY = "SET_KEY_HERE"
-LOG_FILE = "./dashboard.log"
+MACHINE_ID = os.environ.get("MACHINE_ID", "123")
+API_KEY = os.environ.get("API_KEY", "123456789")
+LOG_FILE = os.environ.get("LOG_FILE", "./dashboard.log")
 API_URL = f"https://console.vast.ai/api/v0/machines/{MACHINE_ID}/?api_key={API_KEY}"
 
 _cache = None          # (timestamp, data)
@@ -221,9 +221,10 @@ class Handler(BaseHTTPRequestHandler):
                 rows.append(f'<div class="section-label">Running ({len(running)})</div>')
                 rows.append("<table>")
                 for c in running:
-                    btn = ""
                     if not c["name"].startswith("C."):
                         btn = f'<td class="action"><button class="stop-btn" data-name="{c["name"]}">STOP</button></td>'
+                    else:
+                        btn = '<td class="action"></td>'
                     rows.append(
                         f'<tr class="running-text">{btn}'
                         f'<td class="name">{c["name"]}</td>'
@@ -234,9 +235,10 @@ class Handler(BaseHTTPRequestHandler):
                 rows.append(f'<div class="section-label">Stopped ({len(stopped)})</div>')
                 rows.append("<table>")
                 for c in stopped:
-                    btn = ""
                     if not c["name"].startswith("C."):
                         btn = f'<td class="action"><button class="start-btn" data-name="{c["name"]}">START</button></td>'
+                    else:
+                        btn = '<td class="action"></td>'
                     rows.append(
                         f'<tr class="stopped-text">{btn}'
                         f'<td class="name">{c["name"]}</td>'

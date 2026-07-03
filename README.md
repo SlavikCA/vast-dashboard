@@ -8,9 +8,27 @@ Docker container inventory. Zero dependencies — stdlib only.
 - Python 3.9+
 - Docker (CLI + daemon) if you want the containers section
 
-## Configuration
+Credentials and log path are read from environment variables, with hardcoded
+fallbacks in `server.py` lines 13–15:
 
-Set your vast.ai credentials in `server.py` (lines 12–13)
+| Env var      | Default             | Description              |
+|--------------|---------------------|--------------------------|
+| `MACHINE_ID` | -                   | vast.ai machine ID       |
+| `API_KEY`    | -                   | vast.ai API key          |
+| `LOG_FILE`   | `"./dashboard.log"` | request/API log path     |
+| `PORT`       | `8080`              | HTTP listen port         |
+
+## Logging
+
+All web requests and vast.ai API calls are written to `LOG_FILE` (default
+`./dashboard.log`). Each line is `ISO8601Z  message`.
+
+Example:
+
+    2026-07-03T04:56:43Z vast.ai GET https://console.vast.ai/api/v0/machines/…
+    2026-07-03T04:56:43Z vast.ai OK hostname=vast5090 gpu=RTX 5090
+    2026-07-03T04:56:43Z web GET / from 127.0.0.1
+    2026-07-03T04:56:43Z web POST /start?name=my-container from 127.0.0.1
 
 ## Docker access
 
@@ -31,7 +49,7 @@ docker ps
 ## Quick start
 
 ```bash
-python3 server.py
+MACHINE_ID=123 API_KEY=your-key python3 server.py
 # → listening on :8080
 ```
 
@@ -53,6 +71,8 @@ ExecStart=/usr/bin/python3 /opt/vast-status/server.py
 Restart=always
 RestartSec=5
 Environment=PORT=8080
+Environment=MACHINE_ID=123
+Environment=API_KEY=your-vast-api-key
 
 [Install]
 WantedBy=multi-user.target
@@ -76,7 +96,12 @@ sudo systemctl status vast-status
 
 ## Endpoints
 
-| Path      | Description                          |
-|-----------|--------------------------------------|
-| `/`       | HTML status page                     |
-| `/health` | Plain-text `ok` for health checks    |
+| Path                | Method | Description                                   |
+|---------------------|--------|-----------------------------------------------|
+| `/`                 | GET    | HTML dashboard (hardware + containers)         |
+| `/health`           | GET    | Plain-text `ok` for health checks             |
+| `/start?name=<c>`   | POST   | Start container `<c>` (returns JSON)          |
+| `/stop?name=<c>`    | POST   | Stop container `<c>` (returns JSON)           |
+
+Container names matching `C.*` get no action buttons.
+Container names are validated — only `[a-zA-Z0-9_.-]` allowed.
