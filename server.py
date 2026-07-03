@@ -17,6 +17,15 @@ API_URL = f"https://console.vast.ai/api/v0/machines/{MACHINE_ID}/?api_key={API_K
 _cache = None          # (timestamp, data)
 _CACHE_TTL = 30        # seconds
 
+def _log(msg: str) -> None:
+    """Append a timestamped line to LOG_FILE."""
+    ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write(f"{ts} {msg}\n")
+    except OSError:
+        pass
+
 
 def _fetch_machine() -> dict:
     """Return parsed JSON for this machine (short-lived cache)."""
@@ -25,12 +34,14 @@ def _fetch_machine() -> dict:
     if _cache and now - _cache[0] < _CACHE_TTL:
         return _cache[1]
 
+    _log(f"vast.ai GET {API_URL}")
     req = urllib.request.Request(API_URL, headers={"Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=10) as resp:
-        data = json.loads(resp.read())
+        raw = resp.read()
+        data = json.loads(raw)
 
     machine = data[0] if isinstance(data, list) else data
-    _cache = (now, machine)
+    _log(f"vast.ai OK hostname={machine.get('hostname')} gpu={machine.get('gpu_name')}")
     return machine
 
 
@@ -89,6 +100,7 @@ body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto;
       padding: 0 20px; color: #e0e0e0; background: #1a1a1a; }
 h1 { font-size: 2.2em; margin-bottom: 4px; letter-spacing: -0.5px; color: #fff; }
 .status { font-size: 1.3em; font-weight: 700; margin-bottom: 28px; }
+.status .ts { font-size: 0.6em; font-weight: 400; color: #888; margin-left: 8px; }
 .status.busy { color: #ef5350; }   .status.idle { color: #66bb6a; }
 .status.available { color: #42a5f5; }
 table { border-collapse: collapse; width: 100%; }
@@ -116,8 +128,16 @@ h2 { font-size: 1.3em; color: #ccc; margin: 32px 0 12px; }
 .containers button.start-btn:hover { background: #1a3a1a; }
 .containers button.stop-btn  { border-color: #ef5350; color: #ef5350; }
 .containers button.stop-btn:hover  { background: #3a1a1a; }
+@keyframes sweep {
+  from { background-size: 0% 100%; }
+  to   { background-size: 100% 100%; }
+}
+.containers button.sweeping {
+  background-image: linear-gradient(to right, rgba(255,255,255,0.2), rgba(255,255,255,0.2));
+  background-repeat: no-repeat;
+  animation: sweep 5s linear forwards;
+}
 """
-
 TEMPLATE = """\
 <!DOCTYPE html>
 <html lang="en">
@@ -129,7 +149,7 @@ TEMPLATE = """\
 </head>
 <body>
 <h1>{hostname}</h1>
-<div class="status {cls}">{status}</div>
+<div class="status {cls}">{status} <span class="ts" id="ts"></span></div>
 <table>
 <tr><td>GPU</td><td>{gpu} ({gpu_ram})</td></tr>
 <tr><td>CPU</td><td>{cpu} · {cores}C</td></tr>
@@ -142,9 +162,11 @@ TEMPLATE = """\
 {containers}
 </div>
 <script>
+document.getElementById("ts").textContent = new Date().toLocaleString();
 for (const btn of document.querySelectorAll(".start-btn, .stop-btn")) {{
   btn.addEventListener("click", async () => {{
     btn.disabled = true;
+    btn.classList.add("sweeping");
     const action = btn.classList.contains("start-btn") ? "start" : "stop";
     const name = encodeURIComponent(btn.dataset.name);
     try {{ await fetch("/" + action + "?name=" + name, {{ method: "POST" }}); }} catch (_) {{}}
@@ -181,6 +203,7 @@ class Handler(BaseHTTPRequestHandler):
 
         hostname = m["hostname"]
         status = _status(m)
+        _log(f"web {self.command} {self.path} from {self.client_address[0]}")
         cls = "busy" if status == "BUSY" else ("available" if status == "AVAILABLE" else "idle")
 
 
@@ -253,6 +276,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(400, "bad container name")
             return
 
+        _log(f"web {self.command} {self.path} from {self.client_address[0]}")
         if url.path == "/start":
             cmd = ["docker", "start", name]
         elif url.path == "/stop":
