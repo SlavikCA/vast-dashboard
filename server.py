@@ -115,6 +115,7 @@ h2 { font-size: 1.3em; color: #ccc; margin: 32px 0 12px; }
                  font-size: 0.92em; vertical-align: top; }
 .containers td.name { font-weight: 600; color: #ddd; }
 .containers td.image { color: #999; font-size: 0.85em; }
+.containers td.uptime { color: #999; font-size: 0.82em; white-space: nowrap; }
 .containers tr.running-text td { color: #66bb6a; }
 .containers tr.stopped-text td { color: #ef5350; }
 .containers .section-label { font-size: 0.82em; color: #666; text-transform: uppercase;
@@ -228,7 +229,8 @@ class Handler(BaseHTTPRequestHandler):
                     rows.append(
                         f'<tr class="running-text">{btn}'
                         f'<td class="name">{c["name"]}</td>'
-                        f'<td class="image">{c["image"]}</td></tr>'
+                        f'<td class="image">{c["image"]}</td>'
+                        f'<td class="uptime">{c["status"]}</td></tr>'
                     )
                 rows.append("</table>")
             if stopped:
