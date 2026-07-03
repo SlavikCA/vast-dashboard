@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlparse
 import subprocess
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-PORT = int(os.environ.get("PORT", 8080))
+PORT = int(os.environ.get("PORT", 7000))
 MACHINE_ID = os.environ.get("MACHINE_ID", "123")
 API_KEY = os.environ.get("API_KEY", "123456789")
 LOG_FILE = os.environ.get("LOG_FILE", "./dashboard.log")
@@ -156,7 +156,7 @@ TEMPLATE = """\
 <tr><td>GPU</td><td>{gpu} ({gpu_ram})</td></tr>
 <tr><td>CPU</td><td>{cpu} · {cores}C</td></tr>
 <tr><td>RAM</td><td>{ram}</td></tr>
-<tr><td>Disk</td><td>{disk} GB</td></tr>
+<tr><td>Disk</td><td>{disk}</td></tr>
 <tr><td>Driver / CUDA</td><td>{driver} / {cuda}</td></tr>
 </table>
 <h2>Containers</h2>
@@ -259,7 +259,7 @@ class Handler(BaseHTTPRequestHandler):
             cpu=m.get("cpu_name", "—"),
             cores=m.get("cpu_cores", "—"),
             ram=_mb_to_gb(m.get("cpu_ram", 0)),
-            disk=m.get("avail_disk_space", m.get("disk_space", "—")),
+            disk=f"{m.get('avail_disk_space', m.get('disk_space', 0)) / 1024:.1f} TB",
             driver=m.get("driver_version", "—"),
             containers=container_html,
             cuda=m.get("cuda_max_good", "—"),

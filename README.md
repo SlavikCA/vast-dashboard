@@ -16,7 +16,7 @@ fallbacks in `server.py` lines 13–15:
 | `MACHINE_ID` | -                   | vast.ai machine ID       |
 | `API_KEY`    | -                   | vast.ai API key          |
 | `LOG_FILE`   | `"./dashboard.log"` | request/API log path     |
-| `PORT`       | `8080`              | HTTP listen port         |
+| `PORT`       | `7000`              | HTTP listen port         |
 
 ## Logging
 
@@ -50,15 +50,16 @@ docker ps
 
 ```bash
 MACHINE_ID=123 API_KEY=your-key python3 server.py
-# → listening on :8080
+# → listening on :7000
 ```
 
-Visit `http://<node-ip>:8080/`.
+Visit `http://<node-ip>:7000/`.
 
 ## Install as a systemd service (auto-start on boot)
 
+sudo nano /etc/systemd/system/vast-status.service
+
 ```bash
-sudo tee /etc/systemd/system/vast-status.service <<'EOF'
 [Unit]
 Description=vast.ai node dashboard page
 After=network.target docker.service
@@ -70,13 +71,13 @@ User=root
 ExecStart=/usr/bin/python3 /opt/vast-status/server.py
 Restart=always
 RestartSec=5
-Environment=PORT=8080
+Environment=PORT=7000
 Environment=MACHINE_ID=123
 Environment=API_KEY=your-vast-api-key
+Environment=LOG_FILE=/var/log/dashboard.log
 
 [Install]
 WantedBy=multi-user.target
-EOF
 ```
 
 Copy the script into place and enable:
