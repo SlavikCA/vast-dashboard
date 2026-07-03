@@ -12,6 +12,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 PORT = int(os.environ.get("PORT", 8080))
 MACHINE_ID = "SET_MACHINE"
 API_KEY = "SET_KEY_HERE"
+LOG_FILE = "./dashboard.log"
 API_URL = f"https://console.vast.ai/api/v0/machines/{MACHINE_ID}/?api_key={API_KEY}"
 
 _cache = None          # (timestamp, data)
