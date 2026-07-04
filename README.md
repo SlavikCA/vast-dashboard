@@ -6,13 +6,15 @@ Single-file Python web server that displays host hardware status (via vast.ai AP
 
 Goal: Use my rig whenever it's not occupied by Vast tasks.
 
-Feeatures:
-- display status of the rig (Busy / Available)
-- display specs of the righ
-- start / stop containers: only user's containers. Doesn't mess with Vast's containers.
+Features:
+- Display status of the rig (Busy / Available)
+- Display specs of the rig
+- Start / stop containers directly: only user's containers. Doesn't mess with Vast's containers
 
 Roadmap:
-- start host's task via Vast API
+- Start / stop containers on my own rigs via Vast API
+- Start / stop deadload as soon as host is available
+- Manage background (miner) load: stop during peak hours (1-9pm)
 
 ## Prerequisites
 
@@ -43,8 +45,7 @@ Example:
 
 ## Docker access
 
-The script runs `docker ps -a`. You do **not** need root — membership in the
-`docker` group is sufficient:
+The script runs `docker ps -a`. So, you need either to run script as rooot, or use user with the membership in the `docker` group:
 
 ```bash
 sudo usermod -aG docker $USER
