@@ -96,6 +96,26 @@ def _maybe_alert(has_error: bool, msg: str) -> None:
     elif not has_error:
         _error_active = False
 
+_host_busy = False       # was the host BUSY (any kind) at the last check?
+
+def _maybe_alert_available(m: dict) -> None:
+    """Notify when the host transitions from BUSY (any kind) to AVAILABLE."""
+    global _host_busy
+    status = _status(m)
+    is_busy = status.startswith("BUSY")
+    if not is_busy and _host_busy and status == "AVAILABLE":
+        hostname = m.get("hostname", MACHINE_ID)
+        msg = f"[{hostname}] Machine is now AVAILABLE"
+        _log(f"shoutrrr available-alert: {msg}")
+        try:
+            subprocess.run(
+                ["shoutrrr", "send", "--url", SHOUT, "-m", msg],
+                capture_output=True, text=True, timeout=15,
+            )
+        except Exception as exc:
+            _log(f"shoutrrr available-alert failed: {exc}")
+    _host_busy = is_busy
+
 def _error_check_loop() -> None:
     """Background thread: check immediately, then every 15 min."""
     # First check after a short delay (let the server start)
@@ -105,6 +125,7 @@ def _error_check_loop() -> None:
             m = _fetch_machine(force=True)
             error_text = _machine_errors(m)
             _maybe_alert(bool(error_text), f"[{m.get('hostname', MACHINE_ID)}] {error_text}")
+            _maybe_alert_available(m)
         except Exception as exc:
             _log(f"error check failed: {exc}")
         time.sleep(15 * 60)
