@@ -89,6 +89,7 @@ Environment=PORT=7000
 Environment=MACHINE_ID=123
 Environment=API_KEY=your-vast-api-key
 Environment=LOG_FILE=/var/log/dashboard.log
+Environment=SHOUT=""
 
 [Install]
 WantedBy=multi-user.target
@@ -98,10 +99,18 @@ Copy the script into place and enable:
 
 ```bash
 sudo mkdir -p /opt/vast-status
-sudo cp server.py /opt/vast-status/
+sudo curl -o /opt/vast-status/server.py https://raw.githubusercontent.com/SlavikCA/vast-dashboard/refs/heads/master/server.py
 sudo systemctl daemon-reload
 sudo systemctl enable --now vast-status
 sudo systemctl status vast-status
+```
+
+to upgrade:
+```bash
+sudo curl -o /opt/vast-status/server.py https://raw.githubusercontent.com/SlavikCA/vast-dashboard/refs/heads/master/server.py
+sudo systemctl daemon-reload
+sudo systemctl restart vast-status
+sudo systemctl status  vast-status
 ```
 
 - **User:** set to the user that can talk to Docker (often `root` on vast.ai

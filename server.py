@@ -69,7 +69,7 @@ def _status(m: dict) -> str:
         return "AVAILABLE"
     return "IDLE"
 
-_last_error_sent = None
+_error_active = False
 
 def _machine_errors(m: dict) -> str:
     """Return combined error text from error_description and vm_error_msg, or empty string."""
@@ -80,20 +80,21 @@ def _machine_errors(m: dict) -> str:
         parts.append(f"vm_error_msg: {m['vm_error_msg']}")
     return "\n".join(parts)
 
-def _send_error_alert(msg: str) -> None:
-    """Send error via shoutrrr, deduplicating consecutive identical alerts."""
-    global _last_error_sent
-    if msg == _last_error_sent:
-        return
-    _last_error_sent = msg
-    _log(f"shoutrrr alert: {msg[:200]}")
-    try:
-        subprocess.run(
-            ["shoutrrr", "send", "--url", SHOUT, "-m", msg],
-            capture_output=True, text=True, timeout=15,
-        )
-    except Exception as exc:
-        _log(f"shoutrrr failed: {exc}")
+def _maybe_alert(has_error: bool, msg: str) -> None:
+    """Send error via shoutrrr only on new error appearance; skip repeats and resolutions."""
+    global _error_active
+    if has_error and not _error_active:
+        _error_active = True
+        _log(f"shoutrrr alert: {msg[:200]}")
+        try:
+            subprocess.run(
+                ["shoutrrr", "send", "--url", SHOUT, "-m", msg],
+                capture_output=True, text=True, timeout=15,
+            )
+        except Exception as exc:
+            _log(f"shoutrrr failed: {exc}")
+    elif not has_error:
+        _error_active = False
 
 def _error_check_loop() -> None:
     """Background thread: check immediately, then every 15 min."""
@@ -103,8 +104,7 @@ def _error_check_loop() -> None:
         try:
             m = _fetch_machine(force=True)
             error_text = _machine_errors(m)
-            if error_text:
-                _send_error_alert(f"[{m.get('hostname', MACHINE_ID)}] {error_text}")
+            _maybe_alert(bool(error_text), f"[{m.get('hostname', MACHINE_ID)}] {error_text}")
         except Exception as exc:
             _log(f"error check failed: {exc}")
         time.sleep(15 * 60)
@@ -267,8 +267,9 @@ class Handler(BaseHTTPRequestHandler):
         combined = "\n".join(filter(None, [api_error, machine_errors]))
         error_html = f'<p class="error">{html.escape(combined)}</p>' if combined else ""
         if combined:
-            _send_error_alert(f"[{hostname}] {combined}")
-
+            _maybe_alert(True, f"[{hostname}] {combined}")
+        else:
+            _maybe_alert(False, "")
 
         err, containers = _docker_ps()
         if err:
