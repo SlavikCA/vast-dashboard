@@ -10,6 +10,7 @@ Features:
 - Display status of the rig (Busy / Available)
 - Display specs of the rig
 - Start / stop containers directly: only user's containers. Doesn't mess with Vast's containers
+- Display host error and sends notification
 
 Roadmap:
 - Start / stop containers on my own rigs via Vast API
@@ -108,7 +109,6 @@ sudo systemctl status vast-status
 to upgrade:
 ```bash
 sudo curl -o /opt/vast-status/server.py https://raw.githubusercontent.com/SlavikCA/vast-dashboard/refs/heads/master/server.py
-sudo systemctl daemon-reload
 sudo systemctl restart vast-status
 sudo systemctl status  vast-status
 ```

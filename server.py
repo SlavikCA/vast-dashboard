@@ -16,7 +16,7 @@ MACHINE_ID = os.environ.get("MACHINE_ID", "123")
 API_KEY = os.environ.get("API_KEY", "123456789")
 LOG_FILE = os.environ.get("LOG_FILE", "./dashboard.log")
 API_URL = f"https://console.vast.ai/api/v0/machines/{MACHINE_ID}/?api_key={API_KEY}"
-SHOUT=""
+SHOUT = os.environ.get("SHOUT","")
 
 _cache = None          # (timestamp, data)
 _CACHE_TTL = 30        # seconds
