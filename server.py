@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Minimal status page for a vast.ai node.  No dependencies beyond stdlib."""
 
+import html
 import json
 import os
 import time
 import urllib.request
 from urllib.parse import parse_qs, urlparse
 import subprocess
+import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 PORT = int(os.environ.get("PORT", 7000))
@@ -14,25 +16,28 @@ MACHINE_ID = os.environ.get("MACHINE_ID", "123")
 API_KEY = os.environ.get("API_KEY", "123456789")
 LOG_FILE = os.environ.get("LOG_FILE", "./dashboard.log")
 API_URL = f"https://console.vast.ai/api/v0/machines/{MACHINE_ID}/?api_key={API_KEY}"
+SHOUT=""
 
 _cache = None          # (timestamp, data)
 _CACHE_TTL = 30        # seconds
 
 def _log(msg: str) -> None:
-    """Append a timestamped line to LOG_FILE."""
+    """Append a timestamped line to LOG_FILE and print to console."""
     ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    line = f"{ts} {msg}"
+    print(line, flush=True)
     try:
         with open(LOG_FILE, "a") as f:
-            f.write(f"{ts} {msg}\n")
+            f.write(line + "\n")
     except OSError:
         pass
 
 
-def _fetch_machine() -> dict:
+def _fetch_machine(force: bool = False) -> dict:
     """Return parsed JSON for this machine (short-lived cache)."""
     global _cache
     now = time.time()
-    if _cache and now - _cache[0] < _CACHE_TTL:
+    if not force and _cache and now - _cache[0] < _CACHE_TTL:
         return _cache[1]
 
     _log(f"vast.ai GET {API_URL}")
@@ -42,6 +47,7 @@ def _fetch_machine() -> dict:
         data = json.loads(raw)
 
     machine = data[0] if isinstance(data, list) else data
+    _cache = (now, machine)
     _log(f"vast.ai OK hostname={machine.get('hostname')} gpu={machine.get('gpu_name')}")
     return machine
 
@@ -62,6 +68,46 @@ def _status(m: dict) -> str:
     if m.get("listed"):
         return "AVAILABLE"
     return "IDLE"
+
+_last_error_sent = None
+
+def _machine_errors(m: dict) -> str:
+    """Return combined error text from error_description and vm_error_msg, or empty string."""
+    parts = []
+    if m.get("error_description"):
+        parts.append(f"error_description: {m['error_description']}")
+    if m.get("vm_error_msg"):
+        parts.append(f"vm_error_msg: {m['vm_error_msg']}")
+    return "\n".join(parts)
+
+def _send_error_alert(msg: str) -> None:
+    """Send error via shoutrrr, deduplicating consecutive identical alerts."""
+    global _last_error_sent
+    if msg == _last_error_sent:
+        return
+    _last_error_sent = msg
+    _log(f"shoutrrr alert: {msg[:200]}")
+    try:
+        subprocess.run(
+            ["shoutrrr", "send", "--url", SHOUT, "-m", msg],
+            capture_output=True, text=True, timeout=15,
+        )
+    except Exception as exc:
+        _log(f"shoutrrr failed: {exc}")
+
+def _error_check_loop() -> None:
+    """Background thread: check immediately, then every 15 min."""
+    # First check after a short delay (let the server start)
+    time.sleep(10)
+    while True:
+        try:
+            m = _fetch_machine(force=True)
+            error_text = _machine_errors(m)
+            if error_text:
+                _send_error_alert(f"[{m.get('hostname', MACHINE_ID)}] {error_text}")
+        except Exception as exc:
+            _log(f"error check failed: {exc}")
+        time.sleep(15 * 60)
 
 def _docker_ps() -> tuple[str, list[dict]]:
     """Return (error_message, [container_dicts]) from docker ps -a.
@@ -155,6 +201,7 @@ TEMPLATE = """\
 <body>
 <h1>{hostname}</h1>
 <div class="status {cls}">{status} <span class="ts" id="ts"></span></div>
+{errors}
 <table>
 <tr><td>GPU</td><td>{gpu} ({gpu_ram})</td></tr>
 <tr><td>CPU</td><td>{cpu} · {cores}C</td></tr>
@@ -189,15 +236,21 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
 
+        api_error = None
         try:
             m = _fetch_machine()
         except Exception as exc:
-            body = f"<p class=error>API error: {exc}</p>"
-            self.send_response(502)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(body.encode())
-            return
+            if _cache:
+                m = _cache[1]
+                api_error = f"API error (using cached data): {exc}"
+                _log(api_error)
+            else:
+                body = f"<p class=error>API error: {exc}</p>"
+                self.send_response(502)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(body.encode())
+                return
 
         if self.path == "/health":
             self.send_response(200)
@@ -210,6 +263,11 @@ class Handler(BaseHTTPRequestHandler):
         status = _status(m)
         _log(f"web {self.command} {self.path} from {self.client_address[0]}")
         cls = "busy" if status.startswith("BUSY") else ("available" if status == "AVAILABLE" else "idle")
+        machine_errors = _machine_errors(m)
+        combined = "\n".join(filter(None, [api_error, machine_errors]))
+        error_html = f'<p class="error">{html.escape(combined)}</p>' if combined else ""
+        if combined:
+            _send_error_alert(f"[{hostname}] {combined}")
 
 
         err, containers = _docker_ps()
@@ -252,11 +310,12 @@ class Handler(BaseHTTPRequestHandler):
                 rows.append("</table>")
             container_html = "\n".join(rows)
 
-        html = TEMPLATE.format(
+        page = TEMPLATE.format(
             css=CSS,
             hostname=hostname,
             status=status,
             cls=cls,
+            errors=error_html,
             gpu=m.get("gpu_name", "—"),
             gpu_ram=_mb_to_gb(m.get("gpu_ram", 0)),
             cpu=m.get("cpu_name", "—"),
@@ -271,7 +330,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
-        self.wfile.write(html.encode())
+        self.wfile.write(page.encode())
 
 
     def do_POST(self):
@@ -318,5 +377,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    threading.Thread(target=_error_check_loop, daemon=True).start()
     print(f"listening on :{PORT}  (machine {MACHINE_ID})")
     HTTPServer(("", PORT), Handler).serve_forever()

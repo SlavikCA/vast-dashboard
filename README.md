@@ -20,16 +20,18 @@ Roadmap:
 
 - Python 3.9+
 - Docker (CLI + daemon) if you want the containers section
+- [shoutrrr](https://github.com/nicholas-fedor/shoutrrr) - optional for notifications, when error observed.
 
 Credentials and log path are read from environment variables, with hardcoded
 fallbacks in `server.py` lines 13–15:
 
-| Env var      | Default             | Description              |
-|--------------|---------------------|--------------------------|
-| `MACHINE_ID` | -                   | vast.ai machine ID       |
-| `API_KEY`    | -                   | vast.ai API key          |
-| `LOG_FILE`   | `"./dashboard.log"` | request/API log path     |
-| `PORT`       | `7000`              | HTTP listen port         |
+| Env var      | Default             | Description                                                                    |
+|--------------|---------------------|--------------------------------------------------------------------------------|
+| `MACHINE_ID` | -                   | vast.ai machine ID                                                             |
+| `API_KEY`    | -                   | vast.ai API key                                                                |
+| `LOG_FILE`   | `"./dashboard.log"` | request/API log path                                                           |
+| `PORT`       | `7000`              | HTTP listen port                                                               |
+| `SHOUT`      | -                   | https://github.com/nicholas-fedor/shoutrrr/blob/main/docs/services/overview.md |
 
 ## Logging
 
