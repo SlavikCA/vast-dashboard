@@ -6,6 +6,7 @@ import json
 import os
 import time
 import urllib.request
+import urllib.error
 from urllib.parse import parse_qs, urlparse
 import subprocess
 import threading
@@ -15,6 +16,7 @@ PORT = int(os.environ.get("PORT", 7000))
 MACHINE_ID = os.environ.get("MACHINE_ID", "123")
 API_KEY = os.environ.get("API_KEY", "123456789")
 LOG_FILE = os.environ.get("LOG_FILE", "./dashboard.log")
+DEADLOAD_FILE = os.environ.get("DEADLOAD_FILE", "./deadload.json")
 API_URL = f"https://console.vast.ai/api/v0/machines/{MACHINE_ID}/?api_key={API_KEY}"
 SHOUT = os.environ.get("SHOUT","")
 
@@ -50,6 +52,48 @@ def _fetch_machine(force: bool = False) -> dict:
     _cache = (now, machine)
     _log(f"vast.ai OK hostname={machine.get('hostname')} gpu={machine.get('gpu_name')}")
     return machine
+
+
+def _vast_api(method: str, url: str, payload: dict | None = None) -> tuple[int, dict]:
+    """Call the vast.ai API with bearer auth; return (http_status, parsed JSON).
+
+    http_status is 0 when the request failed at the transport level.
+    """
+    headers = {"Authorization": f"Bearer {API_KEY}"}
+    data = None
+    if payload is not None:
+        headers["Content-Type"] = "application/json"
+        data = json.dumps(payload).encode()
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    _log(f"vast.ai {method} {url}")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read()
+            status = resp.status
+    except urllib.error.HTTPError as exc:
+        raw = exc.read()
+        status = exc.code
+    except urllib.error.URLError as exc:
+        _log(f"vast.ai {method} transport error: {exc.reason}")
+        return 0, {"error": "network", "msg": str(exc.reason)}
+    except OSError as exc:
+        _log(f"vast.ai {method} transport error: {exc}")
+        return 0, {"error": "network", "msg": str(exc)}
+    try:
+        return status, json.loads(raw)
+    except ValueError:
+        return status, {"error": "bad_response", "msg": f"Non-JSON response (HTTP {status}): {raw[:200]!r}"}
+
+
+def _api_error(status: int, data) -> dict | None:
+    """Return an error payload to surface to the user, or None on success."""
+    if not isinstance(data, dict):
+        return {"error": "bad_response", "msg": f"Unexpected response from vast.ai: {data!r}"}
+    if data.get("error"):
+        return data                      # pass through vast's own error payload
+    if status >= 400:
+        return {"error": f"HTTP {status}", "msg": f"HTTP {status}: {json.dumps(data)}"}
+    return None
 
 
 def _mb_to_gb(mb: int | float) -> str:
@@ -204,11 +248,19 @@ h2 { font-size: 1.3em; color: #ccc; margin: 32px 0 12px; }
   from { background-size: 0% 100%; }
   to   { background-size: 100% 100%; }
 }
-.containers button.sweeping {
+button.sweeping {
   background-image: linear-gradient(to right, rgba(255,255,255,0.2), rgba(255,255,255,0.2));
   background-repeat: no-repeat;
   animation: sweep 5s linear forwards;
 }
+.deadload { margin-bottom: 40px; }
+.deadload button { font-size: 1em; padding: 8px 20px; border-radius: 6px;
+                   cursor: pointer; background: #2a2a2a; }
+.deadload button:disabled { opacity: 0.4; cursor: default; }
+.deadload button.start-btn { border: 1px solid #66bb6a; color: #66bb6a; }
+.deadload button.start-btn:hover { background: #1a3a1a; }
+.deadload button.stop-btn { border: 1px solid #ef5350; color: #ef5350; }
+.deadload button.stop-btn:hover { background: #3a1a1a; }
 """
 TEMPLATE = """\
 <!DOCTYPE html>
@@ -231,13 +283,18 @@ TEMPLATE = """\
 <tr><td>Disk</td><td>{disk}</td></tr>
 <tr><td>Driver / CUDA</td><td>{driver} / {cuda}</td></tr>
 </table>
+<h2>Deadload</h2>
+<div class="deadload">
+<div id="deadload-msg" class="error" style="display:none"></div>
+{deadload_btn}
+</div>
 <h2>Containers</h2>
 <div class="containers">
 {containers}
 </div>
 <script>
 document.getElementById("ts").textContent = new Date().toLocaleString();
-for (const btn of document.querySelectorAll(".start-btn, .stop-btn")) {{
+for (const btn of document.querySelectorAll(".containers .start-btn, .containers .stop-btn")) {{
   btn.addEventListener("click", async () => {{
     btn.disabled = true;
     btn.classList.add("sweeping");
@@ -245,6 +302,35 @@ for (const btn of document.querySelectorAll(".start-btn, .stop-btn")) {{
     const name = encodeURIComponent(btn.dataset.name);
     try {{ await fetch("/" + action + "?name=" + name, {{ method: "POST" }}); }} catch (_) {{}}
     setTimeout(() => location.reload(), 5000);
+  }});
+}}
+const dbtn = document.getElementById("deadload-btn");
+if (dbtn) {{
+  dbtn.addEventListener("click", async () => {{
+    dbtn.disabled = true;
+    dbtn.classList.add("sweeping");
+    const msg = document.getElementById("deadload-msg");
+    const action = dbtn.classList.contains("start-btn") ? "start" : "stop";
+    try {{
+      const resp = await fetch("/deadload/" + action, {{ method: "POST" }});
+      const raw = await resp.text();
+      const data = raw ? JSON.parse(raw) : {{}};
+      const errText = data.msg || data.error;
+      if (errText) {{
+        msg.textContent = "Deadload " + action + " failed: " + errText;
+        msg.style.display = "block";
+        dbtn.disabled = false;
+        dbtn.classList.remove("sweeping");
+      }} else {{
+        msg.style.display = "none";
+        setTimeout(() => location.reload(), 2000);
+      }}
+    }} catch (_) {{
+      msg.textContent = "Deadload request failed (server unreachable).";
+      msg.style.display = "block";
+      dbtn.disabled = false;
+      dbtn.classList.remove("sweeping");
+    }}
   }});
 }}
 </script>
@@ -333,12 +419,19 @@ class Handler(BaseHTTPRequestHandler):
                 rows.append("</table>")
             container_html = "\n".join(rows)
 
+        deadload_btn = (
+            '<button class="stop-btn deadload-btn" id="deadload-btn">STOP DEADLOAD</button>'
+            if os.path.exists(DEADLOAD_FILE)
+            else '<button class="start-btn deadload-btn" id="deadload-btn">START DEADLOAD</button>'
+        )
+
         page = TEMPLATE.format(
             css=CSS,
             hostname=hostname,
             status=status,
             cls=cls,
             errors=error_html,
+            deadload_btn=deadload_btn,
             gpu=m.get("gpu_name", "—"),
             gpu_ram=_mb_to_gb(m.get("gpu_ram", 0)),
             cpu=m.get("cpu_name", "—"),
@@ -358,6 +451,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         url = urlparse(self.path)
+
+        if url.path == "/deadload/start":
+            self._deadload_start()
+            return
+        if url.path == "/deadload/stop":
+            self._deadload_stop()
+            return
+
         qs = parse_qs(url.query)
         name = (qs.get("name", [""])[0]).strip()
 
@@ -394,6 +495,97 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.end_headers()
         self.wfile.write(json.dumps({"ok": True}).encode())
+
+    def _send_json(self, obj: dict, status: int = 200) -> None:
+        body = json.dumps(obj).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _deadload_start(self) -> None:
+        """Rent this machine as a 'deadload' instance via the vast.ai API."""
+        _log(f"web POST /deadload/start from {self.client_address[0]}")
+
+        # 1) Find the on-demand offer for this machine.
+        status, data = _vast_api(
+            "POST",
+            "https://console.vast.ai/api/v0/bundles",
+            {"external": {"eq": False}, "machine_id": {"eq": MACHINE_ID}, "type": "on-demand"},
+        )
+        err = _api_error(status, data)
+        if err:
+            self._send_json(err)
+            return
+        offers = data.get("offers") or []
+        if not offers:
+            self._send_json({"error": "no_offer",
+                             "msg": f"No on-demand offer found for machine {MACHINE_ID}"})
+            return
+        offer_id = offers[0]["id"]
+        _log(f"deadload offer={offer_id}")
+
+        # 2) Create the instance from that offer.
+        status, data = _vast_api(
+            "PUT",
+            f"https://console.vast.ai/api/v0/asks/{offer_id}/",
+            {
+                "client_id": "me",
+                "image": "nvidia/cuda:13.3.0-devel-ubuntu24.04",
+                "env": {},
+                "price": None,
+                "disk": 10,
+                "onstart": "sleep infinity",
+                "cancel_unavail": False,
+                "runtype": "ssh_direct ssh_proxy",
+                "label": "deadload",
+            },
+        )
+        err = _api_error(status, data)
+        if err:
+            self._send_json(err)
+            return
+        contract_id = data.get("new_contract")
+        if not contract_id:
+            self._send_json({"error": "no_contract",
+                             "msg": f"Unexpected response from vast.ai: {json.dumps(data)}"})
+            return
+
+        try:
+            with open(DEADLOAD_FILE, "w") as f:
+                json.dump({"id": contract_id}, f)
+        except OSError as exc:
+            self._send_json({"error": "io", "msg": f"Could not write {DEADLOAD_FILE}: {exc}"})
+            return
+        _log(f"deadload started contract={contract_id}")
+        self._send_json({"ok": True, "id": contract_id})
+
+    def _deadload_stop(self) -> None:
+        """Delete the deadload instance, then remove the state file."""
+        _log(f"web POST /deadload/stop from {self.client_address[0]}")
+        try:
+            with open(DEADLOAD_FILE) as f:
+                contract_id = json.load(f)["id"]
+        except (OSError, ValueError, KeyError):
+            self._send_json({"error": "no_file", "msg": f"No {DEADLOAD_FILE} found"})
+            return
+
+        status, data = _vast_api("DELETE", f"https://console.vast.ai/api/v0/instances/{contract_id}")
+
+        # The DELETE was sent: drop the state file (per spec). Keep it only when
+        # vast was never reached — then the instance is still alive.
+        if status != 0:
+            try:
+                os.remove(DEADLOAD_FILE)
+            except OSError:
+                pass
+
+        err = _api_error(status, data)
+        if err:
+            self._send_json(err)
+            return
+        _log(f"deadload stopped contract={contract_id}")
+        self._send_json({"ok": True})
 
     def log_message(self, fmt, *args):
         pass  # quiet

@@ -30,7 +30,8 @@ fallbacks in `server.py` lines 13–15:
 |--------------|---------------------|--------------------------------------------------------------------------------|
 | `MACHINE_ID` | -                   | vast.ai machine ID                                                             |
 | `API_KEY`    | -                   | vast.ai API key                                                                |
-| `LOG_FILE`   | `"./dashboard.log"` | request/API log path                                                           |
+| `LOG_FILE`       | `"./dashboard.log"` | request/API log path                                                           |
+| `DEADLOAD_FILE` | `"./deadload.json"` | file storing the running deadload instance ID                                 |
 | `PORT`       | `7000`              | HTTP listen port                                                               |
 | `SHOUT`      | -                   | https://github.com/nicholas-fedor/shoutrrr/blob/main/docs/services/overview.md |
 
@@ -126,6 +127,8 @@ sudo systemctl status  vast-status
 | `/health`           | GET    | Plain-text `ok` for health checks             |
 | `/start?name=<c>`   | POST   | Start container `<c>` (returns JSON)          |
 | `/stop?name=<c>`    | POST   | Stop container `<c>` (returns JSON)           |
+| `/deadload/start`   | POST   | Rent this machine as a deadload instance; saves ID to `deadload.json` |
+| `/deadload/stop`    | POST   | Delete the deadload instance (ID from `deadload.json`) and remove the file |
 
 Container names matching `C.*` get no action buttons.
 Container names are validated — only `[a-zA-Z0-9_.-]` allowed.
