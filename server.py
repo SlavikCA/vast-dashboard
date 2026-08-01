@@ -18,6 +18,7 @@ API_KEY = os.environ.get("API_KEY", "123456789")
 SHOUT = os.environ.get("SHOUT","")
 LOG_FILE = os.environ.get("LOG_FILE", "./dashboard.log")
 DEADLOAD_FILE = os.environ.get("DEADLOAD_FILE", "./deadload.json")
+DEADLOAD_IMAGE = os.environ.get("DEADLOAD_IMAGE", "nvidia/cuda:13.3.0-devel-ubuntu24.04")
 API_URL = "https://console.vast.ai/api"
 
 _cache = None          # (timestamp, data)
@@ -423,7 +424,7 @@ class Handler(BaseHTTPRequestHandler):
         deadload_btn = (
             '<button class="stop-btn deadload-btn" id="deadload-btn">STOP DEADLOAD</button>'
             if os.path.exists(DEADLOAD_FILE)
-            else '<button class="start-btn deadload-btn" id="deadload-btn">START DEADLOAD</button>'
+            else '<button class="start-btn deadload-btn" id="deadload-btn" title="DEADLOAD is the container, which does nothing, but marks the GPU as busy, so you can use it for your tasks.">START DEADLOAD</button>'
         )
 
         page = TEMPLATE.format(
@@ -532,7 +533,7 @@ class Handler(BaseHTTPRequestHandler):
             f"{API_URL}/v0/asks/{offer_id}/",
             {
                 "client_id": "me",
-                "image": "nvidia/cuda:13.3.0-devel-ubuntu24.04",
+                "image": DEADLOAD_IMAGE,
                 "env": {},
                 "price": None,
                 "disk": 10,
