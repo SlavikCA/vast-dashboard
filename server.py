@@ -15,10 +15,10 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 PORT = int(os.environ.get("PORT", 7000))
 MACHINE_ID = os.environ.get("MACHINE_ID", "123")
 API_KEY = os.environ.get("API_KEY", "123456789")
+SHOUT = os.environ.get("SHOUT","")
 LOG_FILE = os.environ.get("LOG_FILE", "./dashboard.log")
 DEADLOAD_FILE = os.environ.get("DEADLOAD_FILE", "./deadload.json")
-API_URL = f"https://console.vast.ai/api/v0/machines/{MACHINE_ID}/?api_key={API_KEY}"
-SHOUT = os.environ.get("SHOUT","")
+API_URL = "https://console.vast.ai/api"
 
 _cache = None          # (timestamp, data)
 _CACHE_TTL = 30        # seconds
@@ -42,8 +42,9 @@ def _fetch_machine(force: bool = False) -> dict:
     if not force and _cache and now - _cache[0] < _CACHE_TTL:
         return _cache[1]
 
-    _log(f"vast.ai GET {API_URL}")
-    req = urllib.request.Request(API_URL, headers={"Accept": "application/json"})
+    machine_url = f"{API_URL}/v0/machines/{MACHINE_ID}/"
+    _log(f"vast.ai GET {machine_url}")
+    req = urllib.request.Request(machine_url, headers={"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=10) as resp:
         raw = resp.read()
         data = json.loads(raw)
@@ -510,7 +511,7 @@ class Handler(BaseHTTPRequestHandler):
         # 1) Find the on-demand offer for this machine.
         status, data = _vast_api(
             "POST",
-            "https://console.vast.ai/api/v0/bundles",
+            f"{API_URL}/v0/bundles",
             {"external": {"eq": False}, "machine_id": {"eq": MACHINE_ID}, "type": "on-demand"},
         )
         err = _api_error(status, data)
@@ -528,7 +529,7 @@ class Handler(BaseHTTPRequestHandler):
         # 2) Create the instance from that offer.
         status, data = _vast_api(
             "PUT",
-            f"https://console.vast.ai/api/v0/asks/{offer_id}/",
+            f"{API_URL}/v0/asks/{offer_id}/",
             {
                 "client_id": "me",
                 "image": "nvidia/cuda:13.3.0-devel-ubuntu24.04",
@@ -570,7 +571,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"error": "no_file", "msg": f"No {DEADLOAD_FILE} found"})
             return
 
-        status, data = _vast_api("DELETE", f"https://console.vast.ai/api/v0/instances/{contract_id}")
+        status, data = _vast_api("DELETE", f"{API_URL}/v0/instances/{contract_id}")
 
         # The DELETE was sent: drop the state file (per spec). Keep it only when
         # vast was never reached — then the instance is still alive.
