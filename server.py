@@ -21,6 +21,8 @@ DEADLOAD_FILE = os.environ.get("DEADLOAD_FILE", "./deadload.json")
 DEADLOAD_IMAGE = os.environ.get("DEADLOAD_IMAGE", "nvidia/cuda:13.3.0-devel-ubuntu24.04")
 API_URL = "https://console.vast.ai/api"
 
+# https://docs.vast.ai/api-reference/instances/create-instance
+
 _cache = None          # (timestamp, data)
 _CACHE_TTL = 30        # seconds
 
@@ -422,7 +424,7 @@ class Handler(BaseHTTPRequestHandler):
             container_html = "\n".join(rows)
 
         deadload_btn = (
-            '<button class="stop-btn deadload-btn" id="deadload-btn">STOP DEADLOAD</button>'
+            '<button class="stop-btn deadload-btn" id="deadload-btn" title="Make sure to stop all your personal containers and processes before you release DEADLOAD">STOP DEADLOAD</button>'
             if os.path.exists(DEADLOAD_FILE)
             else '<button class="start-btn deadload-btn" id="deadload-btn" title="DEADLOAD is the container, which does nothing, but marks the GPU as busy, so you can use it for your tasks.">START DEADLOAD</button>'
         )
