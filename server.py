@@ -423,11 +423,24 @@ class Handler(BaseHTTPRequestHandler):
                 rows.append("</table>")
             container_html = "\n".join(rows)
 
-        deadload_btn = (
-            '<button class="stop-btn deadload-btn" id="deadload-btn" title="Make sure to stop all your personal containers and processes before you release DEADLOAD">STOP DEADLOAD</button>'
-            if os.path.exists(DEADLOAD_FILE)
-            else '<button class="start-btn deadload-btn" id="deadload-btn" title="DEADLOAD is the container, which does nothing, but marks the GPU as busy, so you can use it for your tasks.">START DEADLOAD</button>'
-        )
+        if os.path.exists(DEADLOAD_FILE):
+            try:
+                with open(DEADLOAD_FILE) as f:
+                    dl = json.load(f)
+                dl_id = dl.get("id", "?")
+            except (OSError, json.JSONDecodeError):
+                dl_id = "?"
+            deadload_btn = (
+                f'<button class="stop-btn deadload-btn" id="deadload-btn"'
+                f' title="Make sure to stop all your personal containers and processes before you release DEADLOAD">'
+                f'STOP DEADLOAD ({dl_id})</button>'
+            )
+        else:
+            deadload_btn = (
+                '<button class="start-btn deadload-btn" id="deadload-btn"'
+                ' title="DEADLOAD is the container, which does nothing, but marks the GPU as busy, so you can use it for your tasks.">'
+                'START DEADLOAD</button>'
+            )
 
         page = TEMPLATE.format(
             css=CSS,
