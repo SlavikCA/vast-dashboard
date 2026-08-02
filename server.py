@@ -229,15 +229,17 @@ def _docker_ps() -> tuple[str, list[dict]]:
 CSS = """
 body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto;
       padding: 0 20px; color: #e0e0e0; background: #1a1a1a; }
+body.deadload-off { background: #3e1a1a; }
+body.deadload-on  { background: #1a3a1a; }
 h1 { font-size: 2.2em; margin-bottom: 4px; letter-spacing: -0.5px; color: #fff; }
 .status { font-size: 1.3em; font-weight: 700; margin-bottom: 28px; }
 .status .ts { font-size: 0.6em; font-weight: 400; color: #888; margin-left: 8px; }
-.status.busy { color: #ef5350; }   .status.idle { color: #66bb6a; }
+.status.busy { color: #ff0000; }   .status.idle { color: #00ff00; }
 .status.available { color: #42a5f5; }
 table { border-collapse: collapse; width: 100%; }
 td { padding: 6px 0; border-bottom: 1px solid #333; }
 td:first-child { color: #888; width: 140px; }
-.error { color: #ef5350; background: #3e1a1a; padding: 16px; border-radius: 8px; }
+.error { color: #ff0000; background: #3e1a1a; padding: 16px; border-radius: 8px; }
 h2 { font-size: 1.3em; color: #ccc; margin: 32px 0 12px; }
 .containers { margin-bottom: 40px; }
 .containers table { width: 100%; border-collapse: collapse; }
@@ -246,8 +248,8 @@ h2 { font-size: 1.3em; color: #ccc; margin: 32px 0 12px; }
 .containers td.name { font-weight: 600; color: #ddd; }
 .containers td.image { color: #999; font-size: 0.85em; }
 .containers td.uptime { color: #999; font-size: 0.82em; white-space: nowrap; }
-.containers tr.running-text td { color: #66bb6a; }
-.containers tr.stopped-text td { color: #ef5350; }
+.containers tr.running-text td { color: #00ff00; }
+.containers tr.stopped-text td { color: #ff0000; }
 .containers .section-label { font-size: 0.82em; color: #666; text-transform: uppercase;
                              letter-spacing: 0.5px; margin: 16px 0 6px; }
 .containers .empty { color: #555; font-style: italic; font-size: 0.9em; padding: 4px 8px; }
@@ -256,9 +258,9 @@ h2 { font-size: 1.3em; color: #ccc; margin: 32px 0 12px; }
                     border-radius: 4px; cursor: pointer; background: #2a2a2a; color: #ccc; }
 .containers button:hover { background: #3a3a3a; }
 .containers button:disabled { opacity: 0.4; cursor: default; }
-.containers button.start-btn { border-color: #66bb6a; color: #66bb6a; }
+.containers button.start-btn { border-color: #00ff00; color: #00ff00; }
 .containers button.start-btn:hover { background: #1a3a1a; }
-.containers button.stop-btn  { border-color: #ef5350; color: #ef5350; }
+.containers button.stop-btn  { border-color: #ff0000; color: #ff0000; }
 .containers button.stop-btn:hover  { background: #3a1a1a; }
 @keyframes sweep {
   from { background-size: 0% 100%; }
@@ -273,9 +275,9 @@ button.sweeping {
 .deadload button { font-size: 1em; padding: 8px 20px; border-radius: 6px;
                    cursor: pointer; background: #2a2a2a; }
 .deadload button:disabled { opacity: 0.4; cursor: default; }
-.deadload button.start-btn { border: 1px solid #66bb6a; color: #66bb6a; }
+.deadload button.start-btn { border: 1px solid #00ff00; color: #00ff00; }
 .deadload button.start-btn:hover { background: #1a3a1a; }
-.deadload button.stop-btn { border: 1px solid #ef5350; color: #ef5350; }
+.deadload button.stop-btn { border: 1px solid #ff0000; color: #ff0000; }
 .deadload button.stop-btn:hover { background: #3a1a1a; }
 """
 TEMPLATE = """\
@@ -288,7 +290,7 @@ TEMPLATE = """\
 <title>{hostname} — vast.ai</title>
 <style>{css}</style>
 </head>
-<body>
+<body class="{body_cls}">
 <h1>{hostname}</h1>
 <div class="status {cls}">{status} <span class="ts" id="ts"></span></div>
 {errors}
@@ -440,7 +442,8 @@ class Handler(BaseHTTPRequestHandler):
                 rows.append("</table>")
             container_html = "\n".join(rows)
 
-        if os.path.exists(DEADLOAD_FILE):
+        deadload_on = os.path.exists(DEADLOAD_FILE)
+        if deadload_on:
             try:
                 with open(DEADLOAD_FILE) as f:
                     dl = json.load(f)
@@ -461,6 +464,7 @@ class Handler(BaseHTTPRequestHandler):
 
         page = TEMPLATE.format(
             css=CSS,
+            body_cls="deadload-on" if deadload_on else "deadload-off",
             hostname=hostname,
             status=status,
             cls=cls,
