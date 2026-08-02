@@ -107,6 +107,18 @@ def _mb_to_gb(mb: int | float) -> str:
     return f"{mb:.0f} MB"
 
 
+def _fmt_dollar(value: float | None, suffix: str = "") -> str:
+    if value is None:
+        return "—"
+    return f"${value:.2f}{suffix}"
+
+
+def _mul(value: float | None, factor: float) -> float | None:
+    if value is None:
+        return None
+    return value * factor
+
+
 def _status(m: dict) -> str:
     if m.get("current_rentals_running", 0) > 0:
         occ = m.get("gpu_occupancy", "")
@@ -286,6 +298,11 @@ TEMPLATE = """\
 <tr><td>RAM</td><td>{ram}</td></tr>
 <tr><td>Disk</td><td>{disk}</td></tr>
 <tr><td>Driver / CUDA</td><td>{driver} / {cuda}</td></tr>
+<tr><td>GPU price</td><td>{gpu_price}</td></tr>
+<tr><td>Storage price</td><td>{storage_price}</td></tr>
+<tr><td>Volume price</td><td>{volume_price}</td></tr>
+<tr><td>Upload price</td><td>{inet_up_price}</td></tr>
+<tr><td>Download price</td><td>{inet_down_price}</td></tr>
 </table>
 <h2>Deadload</h2>
 <div class="deadload">
@@ -458,6 +475,11 @@ class Handler(BaseHTTPRequestHandler):
             driver=m.get("driver_version", "—"),
             containers=container_html,
             cuda=m.get("cuda_max_good", "—"),
+            gpu_price=_fmt_dollar(m.get("listed_gpu_cost"), "/hr"),
+            storage_price=_fmt_dollar(m.get("listed_storage_cost"), "/GB/month"),
+            volume_price=_fmt_dollar(m.get("listed_volume_cost"), "/GB/month"),
+            inet_up_price=_fmt_dollar(_mul(m.get("listed_inet_up_cost"), 1000), "/TB"),
+            inet_down_price=_fmt_dollar(_mul(m.get("listed_inet_down_cost"), 1000), "/TB"),
         )
 
         self.send_response(200)
