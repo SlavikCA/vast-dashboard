@@ -28,6 +28,7 @@ Credentials and log path are read from environment variables, with hardcoded fal
 | `MACHINE_ID`     | -                                        | vast.ai machine ID                                                             |
 | `API_KEY`        | -                                        | vast.ai API key                                                                |
 | `LOG_FILE`       | `"./dashboard.log"`                      | request/API log path                                                           |
+| `LOG_TIMESTAMP`  | `false`                                  | prefix each log line with an ISO8601Z timestamp                                |
 | `DEADLOAD_FILE`  | `"./deadload.json"`                      | file storing the running deadload instance ID                                  |
 | `DEADLOAD_IMAGE` | `"nvidia/cuda:13.3.0-devel-ubuntu24.04"` | docker image for the deadload instance                                         |
 | `PORT`           | `7000`                                   | HTTP listen port                                                               |
@@ -35,8 +36,8 @@ Credentials and log path are read from environment variables, with hardcoded fal
 
 ## Logging
 
-All web requests and vast.ai API calls are written to `LOG_FILE` (default
-`./dashboard.log`). Each line is `ISO8601Z  message`.
+All web requests and vast.ai API calls are written to `LOG_FILE` (default `./dashboard.log`).
+With `LOG_TIMESTAMP=true` each line is `ISO8601Z  message`; otherwise the timestamp is omitted.
 
 Example:
 

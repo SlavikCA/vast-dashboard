@@ -17,6 +17,7 @@ MACHINE_ID = os.environ.get("MACHINE_ID", "123")
 API_KEY = os.environ.get("API_KEY", "123456789")
 SHOUT = os.environ.get("SHOUT","")
 LOG_FILE = os.environ.get("LOG_FILE", "./dashboard.log")
+LOG_TIMESTAMP = os.environ.get("LOG_TIMESTAMP", "false").lower() in ("1", "true", "yes", "on")
 DEADLOAD_FILE = os.environ.get("DEADLOAD_FILE", "./deadload.json")
 DEADLOAD_IMAGE = os.environ.get("DEADLOAD_IMAGE", "nvidia/cuda:13.3.0-devel-ubuntu24.04")
 API_URL = "https://console.vast.ai/api"
@@ -27,9 +28,12 @@ _cache = None          # (timestamp, data)
 _CACHE_TTL = 30        # seconds
 
 def _log(msg: str) -> None:
-    """Append a timestamped line to LOG_FILE and print to console."""
-    ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    line = f"{ts} {msg}"
+    """Append a line to LOG_FILE and print to console."""
+    if LOG_TIMESTAMP:
+        ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        line = f"{ts} {msg}"
+    else:
+        line = msg
     print(line, flush=True)
     try:
         with open(LOG_FILE, "a") as f:
