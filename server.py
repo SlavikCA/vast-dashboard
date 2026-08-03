@@ -473,6 +473,12 @@ class Handler(BaseHTTPRequestHandler):
                     for c in containers)
         )
 
+        # The deadload contract occupies the GPU: surface it as the status
+        # instead of the generic BUSY/AVAILABLE line.
+        if deadload_running:
+            status = "DEADLOAD running"
+            cls = "busy"
+
         page = TEMPLATE.format(
             css=CSS,
             body_cls="deadload-on" if deadload_running else "deadload-off",
