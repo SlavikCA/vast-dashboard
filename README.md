@@ -1,21 +1,17 @@
 # vast.ai Node Status Page
 
-Single-file Python web server that displays host hardware status (via vast.ai API) and Docker container inventory. Zero dependencies — stdlib only.
+Single-file Python web server that displays host hardware status (via vast.ai API) and Docker container inventory.
 
 ![Dashboard screenshot](dashboard.png "Dashboard screenshot")
 
-Goal: Use my rig whenever it's not occupied by Vast tasks.
+Use the GPU rig whenever it's not occupied by Vast tasks.
 
-Features:
+**Features:**
 - Display status of the rig (Busy / Available)
 - Display specs of the rig
 - Start / stop containers directly: only user's containers. Doesn't mess with Vast's containers
 - Display host error and sends notification
-
-Roadmap:
-- Start / stop containers on my own rigs via Vast API
-- Start / stop deadload as soon as host is available
-- Manage background (miner) load: stop during peak hours (1-9pm)
+- Start / stop deadload. Deadload is the container, which does nothing, but marks the GPU as busy, so you can use it for your tasks
 
 ## Prerequisites
 
@@ -23,8 +19,9 @@ Roadmap:
 - Docker (CLI + daemon) if you want the containers section
 - [shoutrrr](https://github.com/nicholas-fedor/shoutrrr) - optional for notifications, when error observed.
 
-Credentials and log path are read from environment variables, with hardcoded
-fallbacks in `server.py` lines 13–15:
+## Config
+
+Credentials and log path are read from environment variables, with hardcoded fallbacks in `server.py`:
 
 | Env var          | Default                                  | Description                                                                    |
 |------------------|------------------------------------------|--------------------------------------------------------------------------------|
