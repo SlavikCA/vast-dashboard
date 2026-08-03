@@ -123,11 +123,22 @@ def _mul(value: float | None, factor: float) -> float | None:
     return value * factor
 
 
+def _on_demand_running(m: dict) -> bool:
+    """True when the machine status response shows an on-demand container running.
+
+    vast.ai encodes rental types in gpu_occupancy: 'D' = on-demand,
+    'I' = interruptible.  The machine is rented when current_rentals_running > 0.
+    """
+    return (
+        m.get("current_rentals_running", 0) > 0
+        and "D" in m.get("gpu_occupancy", "")
+    )
+
+
 def _status(m: dict) -> str:
+    if _on_demand_running(m):
+        return "BUSY with ON-DEMAND"
     if m.get("current_rentals_running", 0) > 0:
-        occ = m.get("gpu_occupancy", "")
-        if "D" in occ:
-            return "BUSY with ON-DEMAND"
         return "BUSY with interruptible"
     if m.get("listed"):
         return "AVAILABLE"
@@ -460,6 +471,11 @@ class Handler(BaseHTTPRequestHandler):
                 f' title="Make sure to stop all your personal containers and processes before you release DEADLOAD">'
                 f'STOP DEADLOAD ({dl_id})</button>'
             )
+        elif _on_demand_running(m):
+            # The GPU is already rented out to an on-demand container (per the
+            # machine status response) — a second on-demand rental cannot be
+            # started, so the START DEADLOAD button is not shown.
+            deadload_btn = ""
         else:
             deadload_btn = (
                 '<button class="start-btn deadload-btn" id="deadload-btn"'
