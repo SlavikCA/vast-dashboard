@@ -599,7 +599,6 @@ class Handler(BaseHTTPRequestHandler):
                 "env": {},
                 "price": None,
                 "disk": 10,
-                "cancel_unavail": False,
                 "runtype": "ssh_direct ssh_proxy",
                 "label": "deadload",
             },
