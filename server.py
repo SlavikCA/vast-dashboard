@@ -443,6 +443,7 @@ class Handler(BaseHTTPRequestHandler):
             container_html = "\n".join(rows)
 
         deadload_on = os.path.exists(DEADLOAD_FILE)
+        dl_id = "?"
         if deadload_on:
             try:
                 with open(DEADLOAD_FILE) as f:
@@ -462,9 +463,19 @@ class Handler(BaseHTTPRequestHandler):
                 'START DEADLOAD</button>'
             )
 
+        # Vast.ai names the host container for a contract C.<contract_id>.
+        # The contract file exists as soon as the order is accepted, but the
+        # container takes time to appear — show the green state only when the
+        # matching container is actually running.
+        deadload_running = (
+            deadload_on
+            and any(c["state"] == "running" and c["name"] == f"C.{dl_id}"
+                    for c in containers)
+        )
+
         page = TEMPLATE.format(
             css=CSS,
-            body_cls="deadload-on" if deadload_on else "deadload-off",
+            body_cls="deadload-on" if deadload_running else "deadload-off",
             hostname=hostname,
             status=status,
             cls=cls,
