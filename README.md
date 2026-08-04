@@ -31,6 +31,7 @@ Credentials and log path are read from environment variables, with hardcoded fal
 | `LOG_TIMESTAMP`  | `false`                                  | prefix each log line with an ISO8601Z timestamp                                |
 | `DEADLOAD_FILE`  | `"./deadload.json"`                      | file storing the running deadload instance ID                                  |
 | `DEADLOAD_IMAGE` | `"nvidia/cuda:13.3.0-devel-ubuntu24.04"` | docker image for the deadload instance                                         |
+| `PAGE_REFRESH`   | `1800`                                   | page auto-reload interval in seconds                                           |
 | `PORT`           | `7000`                                   | HTTP listen port                                                               |
 | `SHOUT`          | -                                        | https://github.com/nicholas-fedor/shoutrrr/blob/main/docs/services/overview.md |
 

@@ -20,6 +20,7 @@ LOG_FILE = os.environ.get("LOG_FILE", "./dashboard.log")
 LOG_TIMESTAMP = os.environ.get("LOG_TIMESTAMP", "false").lower() in ("1", "true", "yes", "on")
 DEADLOAD_FILE = os.environ.get("DEADLOAD_FILE", "./deadload.json")
 DEADLOAD_IMAGE = os.environ.get("DEADLOAD_IMAGE", "nvidia/cuda:13.3.0-devel-ubuntu24.04")
+PAGE_REFRESH = int(os.environ.get("PAGE_REFRESH", "1800"))   # seconds
 API_URL = "https://console.vast.ai/api"
 
 # https://docs.vast.ai/api-reference/instances/create-instance
@@ -301,7 +302,7 @@ TEMPLATE = """\
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="refresh" content="1800">
+<meta http-equiv="refresh" content="{page_refresh}">
 <title>{hostname} — vast.ai</title>
 <style>{css}</style>
 </head>
@@ -361,7 +362,7 @@ if (dbtn) {{
         dbtn.classList.remove("sweeping");
       }} else {{
         msg.style.display = "none";
-        setTimeout(() => location.reload(), 2000);
+        setTimeout(() => location.reload(), 10000);
       }}
     }} catch (_) {{
       msg.textContent = "Deadload request failed (server unreachable).";
@@ -506,6 +507,7 @@ class Handler(BaseHTTPRequestHandler):
             status=status,
             cls=cls,
             errors=error_html,
+            page_refresh=PAGE_REFRESH,
             deadload_btn=deadload_btn,
             gpu=m.get("gpu_name", "—"),
             gpu_ram=_mb_to_gb(m.get("gpu_ram", 0)),
