@@ -73,10 +73,10 @@ sudo curl -o /opt/vast-status/server.py https://raw.githubusercontent.com/Slavik
 
 ### Simply run from the terminal:
 ```bash
-MACHINE_ID=123 API_KEY=your-key python3 server.py
+MACHINE_ID=<<your-machine-id>> API_KEY=<<your-api-key>> python3 server.py
 ```
 
-Visit `http://<node-ip>:7000/`.
+Visit `http://<<node-ip>>:7000/`.
 
 ## Install as a systemd service (auto-start on boot)
 
