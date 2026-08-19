@@ -95,8 +95,8 @@ ExecStart=/usr/bin/python3 /opt/vast-status/server.py
 Restart=always
 RestartSec=5
 Environment=PORT=7000
-Environment=MACHINE_ID=123
-Environment=API_KEY=your-vast-api-key
+Environment=MACHINE_ID=<<your-machine-id>>
+Environment=API_KEY=<<your-api-key>>
 Environment=LOG_FILE=/var/log/dashboard.log
 Environment=SHOUT=""
 
