@@ -64,9 +64,16 @@ docker ps
 
 ## Quick start
 
+### Download the script:
+
+```bash
+sudo mkdir -p /opt/vast-status
+sudo curl -o /opt/vast-status/server.py https://raw.githubusercontent.com/SlavikCA/vast-dashboard/refs/heads/master/server.py
+```
+
+### Simply run from the terminal:
 ```bash
 MACHINE_ID=123 API_KEY=your-key python3 server.py
-# → listening on :7000
 ```
 
 Visit `http://<node-ip>:7000/`.
@@ -97,11 +104,9 @@ Environment=SHOUT=""
 WantedBy=multi-user.target
 ```
 
-Copy the script into place and enable:
+Enable and start the service:
 
 ```bash
-sudo mkdir -p /opt/vast-status
-sudo curl -o /opt/vast-status/server.py https://raw.githubusercontent.com/SlavikCA/vast-dashboard/refs/heads/master/server.py
 sudo systemctl daemon-reload
 sudo systemctl enable --now vast-status
 sudo systemctl status vast-status
