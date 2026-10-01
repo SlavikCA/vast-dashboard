@@ -311,10 +311,44 @@ def _error_check_loop() -> None:
             _log(f"error check failed: {exc}")
         time.sleep(15 * 60)
 
+def _nv_gpu_map(names: list[str]) -> dict[str, str]:
+    """Map container name → NV_GPU env value (containers without it are omitted).
+
+    Vast.ai exposes the assigned GPU to a rented container as NV_GPU
+    (e.g. "0", or "0,1" for a multi-GPU contract), so it is read from the
+    container env rather than guessed from the host.
+    """
+    if not names:
+        return {}
+    try:
+        out = subprocess.run(
+            ["docker", "inspect", "--format", "{{.Name}}\t{{json .Config.Env}}", *names],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return {}
+    if out.returncode != 0:
+        return {}
+
+    nv = {}
+    for line in out.stdout.splitlines():
+        name, _, env_json = line.partition("\t")
+        try:
+            env = json.loads(env_json) or []
+        except ValueError:
+            continue
+        for item in env:
+            if item.startswith("NV_GPU="):
+                nv[name.lstrip("/")] = item[len("NV_GPU="):]
+                break
+    return nv
+
+
 def _docker_ps() -> tuple[str, list[dict]]:
     """Return (error_message, [container_dicts]) from docker ps -a.
 
-    Each dict has: name, image, status, ports, state (running / exited / …).
+    Each dict has: name, image, status, ports, state (running / exited / …)
+    and nv_gpu (NV_GPU env value, "" when the container has none).
     If docker is unavailable the error string is non-empty and the list empty.
     """
     try:
@@ -340,8 +374,12 @@ def _docker_ps() -> tuple[str, list[dict]]:
         name, image, status, ports, state = parts
         containers.append({
             "name": name, "image": image, "status": status,
-            "ports": ports, "state": state,
+            "ports": ports, "state": state, "nv_gpu": "",
         })
+
+    nv = _nv_gpu_map([c["name"] for c in containers])
+    for c in containers:
+        c["nv_gpu"] = nv.get(c["name"], "")
 
     return ("", containers)
 
@@ -369,6 +407,7 @@ h2 { font-size: 1.3em; color: #ccc; margin: 32px 0 12px; }
 .containers td.name { font-weight: 600; color: #ddd; }
 .containers td.image { color: #999; font-size: 0.85em; }
 .containers td.uptime { color: #999; font-size: 0.82em; white-space: nowrap; }
+.containers td.gpu { color: #7ab8ff; font-size: 0.85em; white-space: nowrap; }
 .containers tr.running-text td { color: #00ff00; }
 .containers tr.stopped-text td { color: #ff0000; }
 .containers .section-label { font-size: 0.82em; color: #666; text-transform: uppercase;
@@ -553,10 +592,13 @@ class Handler(BaseHTTPRequestHandler):
                         btn = f'<td class="action"><button class="stop-btn" data-name="{c["name"]}">STOP</button></td>'
                     else:
                         btn = '<td class="action"></td>'
+                    gpu = (f'<td class="gpu">NV_GPU={html.escape(c["nv_gpu"])}</td>'
+                           if c["nv_gpu"] else "")
                     rows.append(
                         f'<tr class="running-text">{btn}'
                         f'<td class="name">{c["name"]}</td>'
                         f'<td class="image">{c["image"]}</td>'
+                        f'{gpu}'
                         f'<td class="uptime">{c["status"]}</td></tr>'
                     )
                 rows.append("</table>")

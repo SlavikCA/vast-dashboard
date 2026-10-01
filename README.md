@@ -10,6 +10,7 @@ Use the GPU rig whenever it's not occupied by Vast tasks.
 - Display status of the rig (Busy / Available)
 - Display specs of the rig (GPU, PCIe generation/bandwidth, CPU, RAM, disk + disk speed, network up/down speed,
   reliability), machine ID, LAN IP and the machine's free on-demand offers (offer IDs)
+- List containers; each running container shows the GPU assigned to it (`NV_GPU` env of Vast's container)
 - Start / stop containers directly: only user's containers. Doesn't mess with Vast's containers
 - Display host error and sends notification
 - Start / stop deadload. Deadload is the container, which does nothing, but marks the GPU as busy, so you can use it for your tasks.
@@ -53,7 +54,8 @@ Example:
 
 ## Docker access
 
-The script runs `docker ps -a`. So, you need either to run script as rooot, or use user with the membership in the `docker` group:
+The script runs `docker ps -a` and `docker inspect` (to read each container's `NV_GPU`).
+So, you need either to run script as rooot, or use user with the membership in the `docker` group:
 
 ```bash
 sudo usermod -aG docker $USER
