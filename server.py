@@ -2,20 +2,21 @@
 """Minimal status page for a vast.ai node.  No dependencies beyond stdlib."""
 
 import html
+import ipaddress
 import json
 import os
+import subprocess
 import time
 import urllib.request
 import urllib.error
 from urllib.parse import parse_qs, urlparse
-import subprocess
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 PORT = int(os.environ.get("PORT", 7000))
-MACHINE_ID = os.environ.get("MACHINE_ID", "142067")
-API_KEY = os.environ.get("API_KEY", "bedb71d4bd78d4fc432ca9b8713d7f082c625139c1b15122378bf3b9d6e9ac2c")
-SHOUT = os.environ.get("SHOUT","telegram://5787844644:AAEmhjOy4u3CITUl9KfVNC9tx1kotAGAj5Y@telegram?chats=353965613")
+MACHINE_ID = os.environ.get("MACHINE_ID", "")
+API_KEY = os.environ.get("API_KEY", "")
+SHOUT = os.environ.get("SHOUT","")
 LOG_FILE = os.environ.get("LOG_FILE", "./dashboard.log")
 LOG_TIMESTAMP = os.environ.get("LOG_TIMESTAMP", "false").lower() in ("1", "true", "yes", "on")
 DEADLOAD_FILE = os.environ.get("DEADLOAD_FILE", "./deadload.json")
@@ -89,7 +90,10 @@ def _fetch_offers(force: bool = False) -> tuple[list[dict], str | None]:
             return _offers_cache[1], f"offers API error (using cached data): {msg}"
         return [], msg
 
-    offers = data.get("offers") or []
+    # Keep only GPUs that are actually free to rent: on a multi-GPU host some
+    # cards may be rented out while others stay available.
+    offers = [o for o in (data.get("offers") or [])
+              if o.get("rentable", True) and not o.get("rented")]
     _offers_cache = (now, offers)
     _log(f"vast.ai OK offers={[o.get('id') for o in offers]}")
     return offers, None
@@ -135,6 +139,75 @@ def _api_error(status: int, data) -> dict | None:
     if status >= 400:
         return {"error": f"HTTP {status}", "msg": f"HTTP {status}: {json.dumps(data)}"}
     return None
+
+
+_VIRTUAL_IFACES = ("docker", "br-", "veth", "virbr", "tun", "tap", "wg", "lo")
+
+def _lan_ips() -> list[str]:
+    """Local IPv4 addresses of this host, private (LAN) ones first.
+
+    The vast.ai API only reports the NAT public address, so the LAN address
+    has to come from the machine itself.
+    """
+    try:
+        out = subprocess.run(["ip", "-4", "-o", "addr", "show", "scope", "global"],
+                             capture_output=True, text=True, timeout=5)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+    if out.returncode != 0:
+        return []
+
+    addrs = []
+    for line in out.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 4 or parts[1].startswith(_VIRTUAL_IFACES):
+            continue
+        addr = parts[3].split("/")[0]
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            continue
+        if addr not in addrs:
+            addrs.append(addr)
+
+    private = [a for a in addrs if ipaddress.ip_address(a).is_private]
+    return private or addrs
+
+
+def _host_field(m: dict, offers: list[dict], key: str):
+    """Host-level value: the machine response wins, the first offer is the fallback."""
+    if m.get(key) is not None:
+        return m[key]
+    for offer in offers:
+        if offer.get(key) is not None:
+            return offer[key]
+    return None
+
+
+def _fmt_percent(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{value * 100:.2f}%"
+
+
+def _fmt_mbps(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{value:.0f} Mbps"
+
+
+def _fmt_gbs(value: float | None) -> str:
+    """Bandwidth already reported in GB/s (vast: pcie_bw, gpu_mem_bw)."""
+    if value is None:
+        return "—"
+    return f"{value:.1f} GB/s"
+
+
+def _fmt_gbs_from_mbs(value: float | None) -> str:
+    """MB/s → GB/s (vast reports disk_bw in MB/s)."""
+    if value is None:
+        return "—"
+    return f"{value / 1000:.1f} GB/s"
 
 
 def _mb_to_gb(mb: int | float) -> str:
@@ -346,17 +419,20 @@ TEMPLATE = """\
 {errors}
 <table>
 <tr><td>Machine ID</td><td>{machine_id}</td></tr>
-<tr><td>IP address</td><td>{ip}</td></tr>
+<tr><td>LAN IP</td><td>{lan_ip}</td></tr>
 <tr><td>GPU</td><td>{gpu} ({gpu_ram})</td></tr>
+<tr><td>PCIe</td><td>{pcie}</td></tr>
 <tr><td>CPU</td><td>{cpu} · {cores}C</td></tr>
 <tr><td>RAM</td><td>{ram}</td></tr>
 <tr><td>Disk</td><td>{disk}</td></tr>
+<tr><td>Disk speed</td><td>{disk_bw}</td></tr>
+<tr><td>Network</td><td>{inet}</td></tr>
+<tr><td>Reliability</td><td>{reliability}</td></tr>
 <tr><td>Driver / CUDA</td><td>{driver} / {cuda}</td></tr>
 <tr><td>GPU price</td><td>{gpu_price}</td></tr>
 <tr><td>Storage price</td><td>{storage_price}</td></tr>
 <tr><td>Volume price</td><td>{volume_price}</td></tr>
-<tr><td>Upload price</td><td>{inet_up_price}</td></tr>
-<tr><td>Download price</td><td>{inet_down_price}</td></tr>
+<tr><td>Internet price</td><td>{inet_price}</td></tr>
 <tr><td>On-demand offers</td><td>{offers}</td></tr>
 </table>
 <h2>Deadload</h2>
@@ -514,14 +590,11 @@ class Handler(BaseHTTPRequestHandler):
                 f' title="Make sure to stop all your personal containers and processes before you release DEADLOAD">'
                 f'STOP DEADLOAD ({dl_id})</button>'
             )
-        elif _on_demand_running(m):
-            # The GPU is already rented out to an on-demand container (per the
-            # machine status response) — a second on-demand rental cannot be
-            # started, so no START DEADLOAD button is shown.
-            deadload_btn = '<p class="empty">GPU is rented on-demand — deadload unavailable.</p>'
-        else:
-            # One START button per rentable on-demand offer: the offer id is the
-            # ask id the rental is created from.
+        elif offers:
+            # One START button per free GPU (rentable offer): the offer id is
+            # the ask id the rental is created from.  Only the rented-out GPUs
+            # of a multi-GPU host are missing from the list, so a machine that
+            # is partially rented still gets buttons for its free cards.
             blocks = []
             for o in offers:
                 oid = o.get("id")
@@ -544,7 +617,11 @@ class Handler(BaseHTTPRequestHandler):
                     f'START DEADLOAD {html.escape(str(oid))}</button>'
                     f'<span class="offer-info">{info}</span></div>'
                 )
-            deadload_btn = "\n".join(blocks) or '<p class="empty">No rentable on-demand offers.</p>'
+            deadload_btn = "\n".join(blocks)
+        elif _on_demand_running(m):
+            deadload_btn = '<p class="empty">GPU is rented on-demand — deadload unavailable.</p>'
+        else:
+            deadload_btn = '<p class="empty">No rentable on-demand offers.</p>'
 
         # Vast.ai names the host container for a contract C.<contract_id>.
         # The contract file exists as soon as the order is accepted, but the
@@ -562,6 +639,14 @@ class Handler(BaseHTTPRequestHandler):
             status = "DEADLOAD running"
             cls = "busy"
 
+        reliability = _host_field(m, offers, "reliability")
+        if reliability is None:
+            reliability = m.get("reliability2")   # machines API name for the same metric
+        pci_gen = _host_field(m, offers, "pci_gen")
+        gpu_lanes = _host_field(m, offers, "gpu_lanes")
+        inet_up_cost = _host_field(m, offers, "listed_inet_up_cost")
+        inet_down_cost = _host_field(m, offers, "listed_inet_down_cost")
+
         page = TEMPLATE.format(
             css=CSS,
             body_cls="deadload-on" if deadload_running else "deadload-off",
@@ -572,23 +657,32 @@ class Handler(BaseHTTPRequestHandler):
             page_refresh=PAGE_REFRESH,
             deadload_btn=deadload_btn,
             machine_id=m.get("id", MACHINE_ID),
-            ip=next((o["public_ipaddr"] for o in offers if o.get("public_ipaddr")),
-                    m.get("public_ipaddr", "—")),
+            lan_ip=", ".join(_lan_ips()) or "—",
             offers=", ".join(str(o["id"]) for o in offers if o.get("id") is not None) or "—",
             gpu=m.get("gpu_name", "—"),
             gpu_ram=_mb_to_gb(m.get("gpu_ram", 0)),
+            pcie=" · ".join(filter(None, [
+                f"Gen {pci_gen}" if pci_gen is not None else None,
+                _fmt_gbs(_host_field(m, offers, "pcie_bw")),
+                f"{gpu_lanes} lanes" if gpu_lanes is not None else None,
+            ])),
             cpu=m.get("cpu_name", "—"),
             cores=m.get("cpu_cores", "—"),
             ram=_mb_to_gb(m.get("cpu_ram", 0)),
             disk=f"{m.get('avail_disk_space', m.get('disk_space', 0)) / 1024:.1f} TB",
+            disk_bw=_fmt_gbs_from_mbs(_host_field(m, offers, "disk_bw")),
+            inet=f"↑ {_fmt_mbps(_host_field(m, offers, 'inet_up'))} · ↓ {_fmt_mbps(_host_field(m, offers, 'inet_down'))}",
+            reliability=_fmt_percent(reliability),
             driver=m.get("driver_version", "—"),
             containers=container_html,
             cuda=m.get("cuda_max_good", "—"),
             gpu_price=_fmt_dollar(m.get("listed_gpu_cost"), "/hr"),
             storage_price=_fmt_dollar(m.get("listed_storage_cost"), "/GB/month"),
             volume_price=_fmt_dollar(m.get("listed_volume_cost"), "/GB/month"),
-            inet_up_price=_fmt_dollar(_mul(m.get("listed_inet_up_cost"), 1000), "/TB"),
-            inet_down_price=_fmt_dollar(_mul(m.get("listed_inet_down_cost"), 1000), "/TB"),
+            inet_price=(
+                f"↑ {_fmt_dollar(_mul(inet_up_cost, 1000), '/TB')}"
+                f" · ↓ {_fmt_dollar(_mul(inet_down_cost, 1000), '/TB')}"
+            ),
         )
 
         self.send_response(200)

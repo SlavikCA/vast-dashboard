@@ -8,11 +8,14 @@ Use the GPU rig whenever it's not occupied by Vast tasks.
 
 **Features:**
 - Display status of the rig (Busy / Available)
-- Display specs of the rig, machine ID, host IP and the machine's rentable on-demand offers (offer IDs)
+- Display specs of the rig (GPU, PCIe generation/bandwidth, CPU, RAM, disk + disk speed, network up/down speed,
+  reliability), machine ID, LAN IP and the machine's free on-demand offers (offer IDs)
 - Start / stop containers directly: only user's containers. Doesn't mess with Vast's containers
 - Display host error and sends notification
 - Start / stop deadload. Deadload is the container, which does nothing, but marks the GPU as busy, so you can use it for your tasks.
-  One START DEADLOAD button is shown per on-demand offer (labelled with the offer ID); the chosen offer determines the rental price
+  One START DEADLOAD button is shown per *free* on-demand offer (labelled with the offer ID); the chosen offer determines
+  the rental price. On a multi-GPU host, GPUs that are already rented out are not offered, so the remaining free GPUs
+  can still take a deadload
 
 ## Prerequisites
 
