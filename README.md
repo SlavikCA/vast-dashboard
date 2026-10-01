@@ -8,10 +8,11 @@ Use the GPU rig whenever it's not occupied by Vast tasks.
 
 **Features:**
 - Display status of the rig (Busy / Available)
-- Display specs of the rig
+- Display specs of the rig, machine ID, host IP and the machine's rentable on-demand offers (offer IDs)
 - Start / stop containers directly: only user's containers. Doesn't mess with Vast's containers
 - Display host error and sends notification
-- Start / stop deadload. Deadload is the container, which does nothing, but marks the GPU as busy, so you can use it for your tasks
+- Start / stop deadload. Deadload is the container, which does nothing, but marks the GPU as busy, so you can use it for your tasks.
+  One START DEADLOAD button is shown per on-demand offer (labelled with the offer ID); the chosen offer determines the rental price
 
 ## Prerequisites
 
@@ -29,7 +30,7 @@ Credentials and log path are read from environment variables, with hardcoded fal
 | `API_KEY`        | -                                        | vast.ai API key                                                                |
 | `LOG_FILE`       | `"./dashboard.log"`                      | request/API log path                                                           |
 | `LOG_TIMESTAMP`  | `false`                                  | prefix each log line with an ISO8601Z timestamp                                |
-| `DEADLOAD_FILE`  | `"./deadload.json"`                      | file storing the running deadload instance ID                                  |
+| `DEADLOAD_FILE`  | `"./deadload.json"`                      | file storing the running deadload instance ID and the offer it was started from |
 | `DEADLOAD_IMAGE` | `"nvidia/cuda:13.3.0-devel-ubuntu24.04"` | docker image for the deadload instance                                         |
 | `PAGE_REFRESH`   | `1800`                                   | page auto-reload interval in seconds                                           |
 | `PORT`           | `7000`                                   | HTTP listen port                                                               |
@@ -127,7 +128,7 @@ sudo systemctl status  vast-status
 | `/health`           | GET    | Plain-text `ok` for health checks                                          |
 | `/start?name=<c>`   | POST   | Start container `<c>` (returns JSON)                                       |
 | `/stop?name=<c>`    | POST   | Stop container `<c>` (returns JSON)                                        |
-| `/deadload/start`   | POST   | Rent this machine as a deadload instance; saves ID to `deadload.json`      |
+| `/deadload/start?offer=<id>` | POST | Rent this machine from offer `<id>` as a deadload instance; saves ID to `deadload.json` |
 | `/deadload/stop`    | POST   | Delete the deadload instance (ID from `deadload.json`) and remove the file |
 
 Container names matching `C.*` get no action buttons.

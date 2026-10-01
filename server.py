@@ -13,9 +13,9 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 PORT = int(os.environ.get("PORT", 7000))
-MACHINE_ID = os.environ.get("MACHINE_ID", "123")
-API_KEY = os.environ.get("API_KEY", "123456789")
-SHOUT = os.environ.get("SHOUT","")
+MACHINE_ID = os.environ.get("MACHINE_ID", "142067")
+API_KEY = os.environ.get("API_KEY", "bedb71d4bd78d4fc432ca9b8713d7f082c625139c1b15122378bf3b9d6e9ac2c")
+SHOUT = os.environ.get("SHOUT","telegram://5787844644:AAEmhjOy4u3CITUl9KfVNC9tx1kotAGAj5Y@telegram?chats=353965613")
 LOG_FILE = os.environ.get("LOG_FILE", "./dashboard.log")
 LOG_TIMESTAMP = os.environ.get("LOG_TIMESTAMP", "false").lower() in ("1", "true", "yes", "on")
 DEADLOAD_FILE = os.environ.get("DEADLOAD_FILE", "./deadload.json")
@@ -26,6 +26,7 @@ API_URL = "https://console.vast.ai/api"
 # https://docs.vast.ai/api-reference/instances/create-instance
 
 _cache = None          # (timestamp, data)
+_offers_cache = None   # (timestamp, [offer dicts])
 _CACHE_TTL = 30        # seconds
 
 def _log(msg: str) -> None:
@@ -61,6 +62,37 @@ def _fetch_machine(force: bool = False) -> dict:
     _cache = (now, machine)
     _log(f"vast.ai OK hostname={machine.get('hostname')} gpu={machine.get('gpu_name')}")
     return machine
+
+
+def _fetch_offers(force: bool = False) -> tuple[list[dict], str | None]:
+    """Return (offers, error) — rentable on-demand offers for this machine.
+
+    Each offer carries its own ``id`` (the ask id used to start a rental) and
+    host details such as ``public_ipaddr``.  Errors fall back to the cached
+    list; the error string is returned when nothing usable is available.
+    """
+    global _offers_cache
+    now = time.time()
+    if not force and _offers_cache and now - _offers_cache[0] < _CACHE_TTL:
+        return _offers_cache[1], None
+
+    status, data = _vast_api("POST", f"{API_URL}/v0/bundles", {
+        "external": {"eq": False},
+        "rentable": {"eq": True},
+        "machine_id": {"eq": MACHINE_ID},
+        "type": "on-demand",
+    })
+    err = _api_error(status, data)
+    if err:
+        msg = err.get("msg") or json.dumps(err)
+        if _offers_cache:
+            return _offers_cache[1], f"offers API error (using cached data): {msg}"
+        return [], msg
+
+    offers = data.get("offers") or []
+    _offers_cache = (now, offers)
+    _log(f"vast.ai OK offers={[o.get('id') for o in offers]}")
+    return offers, None
 
 
 def _vast_api(method: str, url: str, payload: dict | None = None) -> tuple[int, dict]:
@@ -295,6 +327,8 @@ button.sweeping {
 .deadload button.start-btn:hover { background: #1a3a1a; }
 .deadload button.stop-btn { border: 1px solid #ff0000; color: #ff0000; }
 .deadload button.stop-btn:hover { background: #3a1a1a; }
+.deadload .offer { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.deadload .offer-info { font-size: 0.82em; color: #888; }
 """
 TEMPLATE = """\
 <!DOCTYPE html>
@@ -311,6 +345,8 @@ TEMPLATE = """\
 <div class="status {cls}">{status} <span class="ts" id="ts"></span></div>
 {errors}
 <table>
+<tr><td>Machine ID</td><td>{machine_id}</td></tr>
+<tr><td>IP address</td><td>{ip}</td></tr>
 <tr><td>GPU</td><td>{gpu} ({gpu_ram})</td></tr>
 <tr><td>CPU</td><td>{cpu} · {cores}C</td></tr>
 <tr><td>RAM</td><td>{ram}</td></tr>
@@ -321,6 +357,7 @@ TEMPLATE = """\
 <tr><td>Volume price</td><td>{volume_price}</td></tr>
 <tr><td>Upload price</td><td>{inet_up_price}</td></tr>
 <tr><td>Download price</td><td>{inet_down_price}</td></tr>
+<tr><td>On-demand offers</td><td>{offers}</td></tr>
 </table>
 <h2>Deadload</h2>
 <div class="deadload">
@@ -343,30 +380,31 @@ for (const btn of document.querySelectorAll(".containers .start-btn, .containers
     setTimeout(() => location.reload(), 5000);
   }});
 }}
-const dbtn = document.getElementById("deadload-btn");
-if (dbtn) {{
+const dmsg = document.getElementById("deadload-msg");
+for (const dbtn of document.querySelectorAll(".deadload button")) {{
   dbtn.addEventListener("click", async () => {{
     dbtn.disabled = true;
     dbtn.classList.add("sweeping");
-    const msg = document.getElementById("deadload-msg");
-    const action = dbtn.classList.contains("start-btn") ? "start" : "stop";
+    const isStart = dbtn.classList.contains("start-btn");
+    const action = isStart ? "start" : "stop";
+    const qs = isStart ? "?offer=" + encodeURIComponent(dbtn.dataset.offer) : "";
     try {{
-      const resp = await fetch("/deadload/" + action, {{ method: "POST" }});
+      const resp = await fetch("/deadload/" + action + qs, {{ method: "POST" }});
       const raw = await resp.text();
       const data = raw ? JSON.parse(raw) : {{}};
       const errText = data.msg || data.error;
       if (errText) {{
-        msg.textContent = "Deadload " + action + " failed: " + errText;
-        msg.style.display = "block";
+        dmsg.textContent = "Deadload " + action + " failed: " + errText;
+        dmsg.style.display = "block";
         dbtn.disabled = false;
         dbtn.classList.remove("sweeping");
       }} else {{
-        msg.style.display = "none";
+        dmsg.style.display = "none";
         setTimeout(() => location.reload(), 10000);
       }}
     }} catch (_) {{
-      msg.textContent = "Deadload request failed (server unreachable).";
-      msg.style.display = "block";
+      dmsg.textContent = "Deadload request failed (server unreachable).";
+      dmsg.style.display = "block";
       dbtn.disabled = false;
       dbtn.classList.remove("sweeping");
     }}
@@ -406,6 +444,8 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(b"ok\n")
             return
 
+        offers, offers_err = _fetch_offers()
+
         hostname = m["hostname"]
         status = _status(m)
         _log(f"web {self.command} {self.path} from {self.client_address[0]}")
@@ -413,6 +453,8 @@ class Handler(BaseHTTPRequestHandler):
         machine_errors = _machine_errors(m)
         combined = "\n".join(filter(None, [api_error, machine_errors]))
         error_html = f'<p class="error">{html.escape(combined)}</p>' if combined else ""
+        if offers_err:
+            error_html += f'<p class="error">Offers: {html.escape(offers_err)}</p>'
         if combined:
             _maybe_alert(True, f"[{hostname}] {combined}")
         else:
@@ -468,21 +510,41 @@ class Handler(BaseHTTPRequestHandler):
             except (OSError, json.JSONDecodeError):
                 dl_id = "?"
             deadload_btn = (
-                f'<button class="stop-btn deadload-btn" id="deadload-btn"'
+                f'<button class="stop-btn deadload-btn"'
                 f' title="Make sure to stop all your personal containers and processes before you release DEADLOAD">'
                 f'STOP DEADLOAD ({dl_id})</button>'
             )
         elif _on_demand_running(m):
             # The GPU is already rented out to an on-demand container (per the
             # machine status response) — a second on-demand rental cannot be
-            # started, so the START DEADLOAD button is not shown.
-            deadload_btn = ""
+            # started, so no START DEADLOAD button is shown.
+            deadload_btn = '<p class="empty">GPU is rented on-demand — deadload unavailable.</p>'
         else:
-            deadload_btn = (
-                '<button class="start-btn deadload-btn" id="deadload-btn"'
-                ' title="DEADLOAD is the container, which does nothing, but marks the GPU as busy, so you can use it for your tasks.">'
-                'START DEADLOAD</button>'
-            )
+            # One START button per rentable on-demand offer: the offer id is the
+            # ask id the rental is created from.
+            blocks = []
+            for o in offers:
+                oid = o.get("id")
+                if oid is None:
+                    continue
+                bits = []
+                if o.get("num_gpus"):
+                    bits.append(f"{o['num_gpus']}× {o.get('gpu_name', 'GPU')}")
+                elif o.get("gpu_name"):
+                    bits.append(o["gpu_name"])
+                if o.get("gpu_ram"):
+                    bits.append(_mb_to_gb(o["gpu_ram"]))
+                if o.get("dph_total") is not None:
+                    bits.append(_fmt_dollar(o["dph_total"], "/hr"))
+                info = html.escape(" · ".join(bits))
+                blocks.append(
+                    f'<div class="offer">'
+                    f'<button class="start-btn deadload-btn" data-offer="{html.escape(str(oid))}"'
+                    f' title="DEADLOAD is the container, which does nothing, but marks the GPU as busy, so you can use it for your tasks.">'
+                    f'START DEADLOAD {html.escape(str(oid))}</button>'
+                    f'<span class="offer-info">{info}</span></div>'
+                )
+            deadload_btn = "\n".join(blocks) or '<p class="empty">No rentable on-demand offers.</p>'
 
         # Vast.ai names the host container for a contract C.<contract_id>.
         # The contract file exists as soon as the order is accepted, but the
@@ -509,6 +571,10 @@ class Handler(BaseHTTPRequestHandler):
             errors=error_html,
             page_refresh=PAGE_REFRESH,
             deadload_btn=deadload_btn,
+            machine_id=m.get("id", MACHINE_ID),
+            ip=next((o["public_ipaddr"] for o in offers if o.get("public_ipaddr")),
+                    m.get("public_ipaddr", "—")),
+            offers=", ".join(str(o["id"]) for o in offers if o.get("id") is not None) or "—",
             gpu=m.get("gpu_name", "—"),
             gpu_ram=_mb_to_gb(m.get("gpu_ram", 0)),
             cpu=m.get("cpu_name", "—"),
@@ -586,28 +652,14 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _deadload_start(self) -> None:
-        """Rent this machine as a 'deadload' instance via the vast.ai API."""
-        _log(f"web POST /deadload/start from {self.client_address[0]}")
-
-        # 1) Find the on-demand offer for this machine.
-        status, data = _vast_api(
-            "POST",
-            f"{API_URL}/v0/bundles",
-            {"external": {"eq": False}, "machine_id": {"eq": MACHINE_ID}, "type": "on-demand"},
-        )
-        err = _api_error(status, data)
-        if err:
-            self._send_json(err)
+        """Rent this machine as a 'deadload' instance from the chosen offer."""
+        offer_id = (parse_qs(urlparse(self.path).query).get("offer", [""])[0]).strip()
+        if not offer_id.isdigit():
+            self._send_json({"error": "bad_offer", "msg": "Missing or invalid offer id"}, 400)
             return
-        offers = data.get("offers") or []
-        if not offers:
-            self._send_json({"error": "no_offer",
-                             "msg": f"No on-demand offer found for machine {MACHINE_ID}"})
-            return
-        offer_id = offers[0]["id"]
-        _log(f"deadload offer={offer_id}")
+        _log(f"web POST /deadload/start offer={offer_id} from {self.client_address[0]}")
 
-        # 2) Create the instance from that offer.
+        # 1) Create the instance from that offer.
         status, data = _vast_api(
             "PUT",
             f"{API_URL}/v0/asks/{offer_id}/",
@@ -633,7 +685,7 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             with open(DEADLOAD_FILE, "w") as f:
-                json.dump({"id": contract_id}, f)
+                json.dump({"id": contract_id, "offer": int(offer_id)}, f)
         except OSError as exc:
             self._send_json({"error": "io", "msg": f"Could not write {DEADLOAD_FILE}: {exc}"})
             return
