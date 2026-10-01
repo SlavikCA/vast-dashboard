@@ -65,12 +65,19 @@ docker ps
 
 ## Quick start
 
+### Download the script:
+
 ```bash
-MACHINE_ID=123 API_KEY=your-key python3 server.py
-# → listening on :7000
+sudo mkdir -p /opt/vast-status
+sudo curl -o /opt/vast-status/server.py https://raw.githubusercontent.com/SlavikCA/vast-dashboard/refs/heads/master/server.py
 ```
 
-Visit `http://<node-ip>:7000/`.
+### Simply run from the terminal:
+```bash
+MACHINE_ID=<<your-machine-id>> API_KEY=<<your-api-key>> python3 server.py
+```
+
+Visit `http://<<node-ip>>:7000/`.
 
 ## Install as a systemd service (auto-start on boot)
 
@@ -89,8 +96,8 @@ ExecStart=/usr/bin/python3 /opt/vast-status/server.py
 Restart=always
 RestartSec=5
 Environment=PORT=7000
-Environment=MACHINE_ID=123
-Environment=API_KEY=your-vast-api-key
+Environment=MACHINE_ID=<<your-machine-id>>
+Environment=API_KEY=<<your-api-key>>
 Environment=LOG_FILE=/var/log/dashboard.log
 Environment=SHOUT=""
 
@@ -98,11 +105,9 @@ Environment=SHOUT=""
 WantedBy=multi-user.target
 ```
 
-Copy the script into place and enable:
+Enable and start the service:
 
 ```bash
-sudo mkdir -p /opt/vast-status
-sudo curl -o /opt/vast-status/server.py https://raw.githubusercontent.com/SlavikCA/vast-dashboard/refs/heads/master/server.py
 sudo systemctl daemon-reload
 sudo systemctl enable --now vast-status
 sudo systemctl status vast-status
