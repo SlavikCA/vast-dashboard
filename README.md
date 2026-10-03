@@ -9,7 +9,9 @@ Use the GPU rig whenever it's not occupied by Vast tasks.
 **Features:**
 - Display status of the rig (Busy / Available)
 - Display specs of the rig (GPU, PCIe generation/bandwidth, CPU, RAM, disk + disk speed, network up/down speed,
-  reliability), machine ID, LAN IP and the machine's free on-demand offers (offer IDs)
+  reliability), machine ID, LAN IP and the machine's free on-demand offers — one line per offer, ID followed by its score
+- Show the score range of the market's top 10 on-demand offers for the same GPU model; a thin market shows the actual
+  top-N with a "limited market data" note (e.g. "top 3, limited market data")
 - List containers; each running container shows the GPU assigned to it (`NV_GPU` env of Vast's container)
 - Start / stop containers directly: only user's containers. Doesn't mess with Vast's containers
 - Display host error and sends notification

@@ -28,6 +28,7 @@ API_URL = "https://console.vast.ai/api"
 
 _cache = None          # (timestamp, data)
 _offers_cache = None   # (timestamp, [offer dicts])
+_market_cache = None   # (timestamp, [market offer dicts])
 _CACHE_TTL = 30        # seconds
 
 def _log(msg: str) -> None:
@@ -82,6 +83,7 @@ def _fetch_offers(force: bool = False) -> tuple[list[dict], str | None]:
         "rentable": {"eq": True},
         "machine_id": {"eq": MACHINE_ID},
         "type": "on-demand",
+        "order": [["score", "desc"]],
     })
     err = _api_error(status, data)
     if err:
@@ -96,6 +98,41 @@ def _fetch_offers(force: bool = False) -> tuple[list[dict], str | None]:
               if o.get("rentable", True) and not o.get("rented")]
     _offers_cache = (now, offers)
     _log(f"vast.ai OK offers={[o.get('id') for o in offers]}")
+    return offers, None
+
+
+def _fetch_market_top10(gpu_name: str, force: bool = False) -> tuple[list[dict], str | None]:
+    """Return (top10, error) — top-10 rentable on-demand offers by score for a
+    GPU model (the examples/offers-on-the-market.md query narrowed to one GPU).
+
+    The example's sample-specific filters (verified, US) are dropped so that a
+    rare GPU model still yields a range.  Errors fall back to the cached list.
+    """
+    global _market_cache
+    now = time.time()
+    if not force and _market_cache and now - _market_cache[0] < _CACHE_TTL:
+        return _market_cache[1], None
+
+    status, data = _vast_api("POST", f"{API_URL}/v0/bundles", {
+        "external": {"eq": False},
+        "rentable": {"eq": True},
+        "gpu_name": {"in": [gpu_name]},
+        "num_gpus": {"eq": "1"},
+        "order": [["score", "desc"]],
+        "type": "on-demand",
+        "limit": 10,
+        "allocated_storage": 5.0,
+    })
+    err = _api_error(status, data)
+    if err:
+        msg = err.get("msg") or json.dumps(err)
+        if _market_cache:
+            return _market_cache[1], f"market API error (using cached data): {msg}"
+        return [], msg
+
+    offers = data.get("offers") or []
+    _market_cache = (now, offers)
+    _log(f"vast.ai OK market top10 gpu={gpu_name} n={len(offers)}")
     return offers, None
 
 
@@ -473,6 +510,7 @@ TEMPLATE = """\
 <tr><td>Volume price</td><td>{volume_price}</td></tr>
 <tr><td>Internet price</td><td>{inet_price}</td></tr>
 <tr><td>On-demand offers</td><td>{offers}</td></tr>
+<tr><td>{market_label}</td><td>{market_range}</td></tr>
 </table>
 <h2>Deadload</h2>
 <div class="deadload">
@@ -560,6 +598,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         offers, offers_err = _fetch_offers()
+        gpu_name = m.get("gpu_name")
+        market, market_err = _fetch_market_top10(gpu_name) if gpu_name else ([], None)
 
         hostname = m["hostname"]
         status = _status(m)
@@ -570,6 +610,8 @@ class Handler(BaseHTTPRequestHandler):
         error_html = f'<p class="error">{html.escape(combined)}</p>' if combined else ""
         if offers_err:
             error_html += f'<p class="error">Offers: {html.escape(offers_err)}</p>'
+        if market_err:
+            error_html += f'<p class="error">Market: {html.escape(market_err)}</p>'
         if combined:
             _maybe_alert(True, f"[{hostname}] {combined}")
         else:
@@ -689,6 +731,30 @@ class Handler(BaseHTTPRequestHandler):
         inet_up_cost = _host_field(m, offers, "listed_inet_up_cost")
         inet_down_cost = _host_field(m, offers, "listed_inet_down_cost")
 
+        # One line per rentable offer: ask id followed by its score.
+        offer_lines = []
+        for o in offers:
+            oid = o.get("id")
+            if oid is None:
+                continue
+            score = o.get("score")
+            line = str(oid)
+            if isinstance(score, (int, float)):
+                line += f" · score {score:.2f}"
+            offer_lines.append(html.escape(line))
+        offers_html = "<br>".join(offer_lines) or "—"
+
+        # Reference range: top-10 market offers for this GPU model by score.
+        # A thin market shows the actual count instead of a misleading 10.
+        gpu_disp = gpu_name or "—"
+        market_label = f"Market top 10 ({gpu_disp})"
+        market_scores = [o["score"] for o in market if isinstance(o.get("score"), (int, float))]
+        if market_scores:
+            market_range = f"{min(market_scores):.2f} – {max(market_scores):.2f}"
+            if len(market_scores) < 10:
+                market_range += f" (top {len(market_scores)}, limited market data)"
+        else:
+            market_range = "no listings"
         page = TEMPLATE.format(
             css=CSS,
             body_cls="deadload-on" if deadload_running else "deadload-off",
@@ -700,8 +766,10 @@ class Handler(BaseHTTPRequestHandler):
             deadload_btn=deadload_btn,
             machine_id=m.get("id", MACHINE_ID),
             lan_ip=", ".join(_lan_ips()) or "—",
-            offers=", ".join(str(o["id"]) for o in offers if o.get("id") is not None) or "—",
-            gpu=m.get("gpu_name", "—"),
+            offers=offers_html,
+            market_label=market_label,
+            market_range=market_range,
+            gpu=gpu_disp,
             gpu_ram=_mb_to_gb(m.get("gpu_ram", 0)),
             pcie=" · ".join(filter(None, [
                 f"Gen {pci_gen}" if pci_gen is not None else None,
