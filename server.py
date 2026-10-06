@@ -684,6 +684,8 @@ class Handler(BaseHTTPRequestHandler):
                 oid = o.get("id")
                 if oid is None:
                     continue
+                n_gpus = o.get("num_gpus") or 1
+                gpu_noun = "GPU" if n_gpus == 1 else "GPUs"
                 bits = []
                 if o.get("num_gpus"):
                     bits.append(f"{o['num_gpus']}× {o.get('gpu_name', 'GPU')}")
@@ -698,7 +700,7 @@ class Handler(BaseHTTPRequestHandler):
                     f'<div class="offer">'
                     f'<button class="start-btn deadload-btn" data-offer="{html.escape(str(oid))}"'
                     f' title="DEADLOAD is the container, which does nothing, but marks the GPU as busy, so you can use it for your tasks.">'
-                    f'START DEADLOAD {html.escape(str(oid))}</button>'
+                    f'START DEADLOAD {html.escape(str(oid))} ({n_gpus} {gpu_noun})</button>'
                     f'<span class="offer-info">{info}</span></div>'
                 )
             deadload_btn = "\n".join(blocks)

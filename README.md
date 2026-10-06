@@ -16,9 +16,8 @@ Use the GPU rig whenever it's not occupied by Vast tasks.
 - Start / stop containers directly: only user's containers. Doesn't mess with Vast's containers
 - Display host error and sends notification
 - Start / stop deadload. Deadload is the container, which does nothing, but marks the GPU as busy, so you can use it for your tasks.
-  One START DEADLOAD button is shown per *free* on-demand offer (labelled with the offer ID); the chosen offer determines
-  the rental price. On a multi-GPU host, GPUs that are already rented out are not offered, so the remaining free GPUs
-  can still take a deadload
+  START DEADLOAD button is shown, labelled with the offer ID and the offer's `num_gpus` — the number of GPUs that rental occupies;
+  On a multi-GPU host, GPUs that are already rented out are not offered, only idle GPUs can take a deadload.
 
 ## Prerequisites
 
