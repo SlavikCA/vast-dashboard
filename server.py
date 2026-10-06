@@ -78,7 +78,7 @@ def _fetch_offers(force: bool = False) -> tuple[list[dict], str | None]:
     if not force and _offers_cache and now - _offers_cache[0] < _CACHE_TTL:
         return _offers_cache[1], None
 
-    status, data = _vast_api("POST", f"{API_URL}/v0/bundles", {
+    status, data = _vast_api("POST", f"{API_URL}/v0/bundles/", {
         "external": {"eq": False},
         "rentable": {"eq": True},
         "machine_id": {"eq": MACHINE_ID},
@@ -113,7 +113,7 @@ def _fetch_market_top10(gpu_name: str, force: bool = False) -> tuple[list[dict],
     if not force and _market_cache and now - _market_cache[0] < _CACHE_TTL:
         return _market_cache[1], None
 
-    status, data = _vast_api("POST", f"{API_URL}/v0/bundles", {
+    status, data = _vast_api("POST", f"{API_URL}/v0/bundles/", {
         "external": {"eq": False},
         "rentable": {"eq": True},
         "gpu_name": {"in": [gpu_name]},
