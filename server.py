@@ -908,7 +908,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"error": "no_file", "msg": f"No {DEADLOAD_FILE} found"})
             return
 
-        status, data = _vast_api("DELETE", f"{API_URL}/v0/instances/{contract_id}")
+        status, data = _vast_api("DELETE", f"{API_URL}/v0/instances/{contract_id}/")
 
         # The DELETE was sent: drop the state file (per spec). Keep it only when
         # vast was never reached — then the instance is still alive.
